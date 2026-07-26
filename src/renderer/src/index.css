@@ -1,12 +1,10 @@
 @import 'tailwindcss';
 
 /*
- * الهوية البصرية (الوثيقة §18) — قيم §18.1/§18.2 مأخوذة من الوثيقة حرفيًا.
- * الدرجات الكاملة لنطاقات rafd/sand/ink مطابقة تمامًا لنطاقات Tailwind
- * teal/amber/slate (كل نقاط التثبيت الواردة في الوثيقة توافقها حرفيًا:
- * rafd-600=#0d9488=teal-600، sand-600=#d97706=amber-600، ink-950=#020617=slate-950 …).
- * قيم ظلال index.css في rafd-app غير متاحة لي الآن (مستودع خاص)؛ القيم أدناه
- * إعادة بناء معقولة وموثَّقة للمراجعة.
+ * الهوية البصرية (الوثيقة §18) — منقولة حرفيًا من rafd-app:
+ * الدرجات الكاملة لنطاقات rafd/sand/ink = نطاقات Tailwind teal/amber/slate
+ * (تطابق مؤكَّد من المشرف مقابل rafd-app الفعلي: rafd-600=#0d9488=teal-600 …)،
+ * وقيم الظلال الثلاثة أدناه منسوخة حرفيًا من rafd-app/src/index.css (السطور 40-42).
  */
 @theme {
   --breakpoint-xs: 30rem;
@@ -65,9 +63,9 @@
   --sidebar: #042f2e;
   --sidebar-text: #ccfbf1;
 
-  --shadow-soft: 0 1px 2px rgb(15 23 42 / 0.06), 0 4px 14px rgb(15 23 42 / 0.06);
-  --shadow-lift: 0 4px 10px rgb(15 23 42 / 0.1), 0 12px 32px rgb(15 23 42 / 0.14);
-  --shadow-glow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent);
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.04);
+  --shadow-lift: 0 8px 24px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+  --shadow-glow: 0 0 0 3px rgba(13, 148, 136, 0.18);
 }
 
 .dark {
