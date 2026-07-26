@@ -168,12 +168,12 @@ async function runSmokeVerify(): Promise<void> {
   }
 }
 
-app.whenReady().then(async () => {
-  if (smokeMode) {
-    // بيئات CI بلا GPU: منع مشاكل التصيير، والنافذة تُنشأ فعليًا لإثبات الإقلاع الحقيقي
-    app.commandLine.appendSwitch('disable-gpu')
-  }
+// بيئات CI بلا GPU: يجب استدعاء appendSwitch قبل جاهزية التطبيق ليكون فعّالًا
+if (smokeMode) {
+  app.commandLine.appendSwitch('disable-gpu')
+}
 
+app.whenReady().then(async () => {
   db = openDb(dbFilePath())
   registerIpc()
   const win = createWindow()

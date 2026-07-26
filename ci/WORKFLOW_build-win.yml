@@ -85,7 +85,9 @@ jobs:
           $proc = Start-Process -FilePath $exe -ArgumentList '--rafd-smoke' -PassThru -Wait -RedirectStandardOutput smoke-write-stdout.log
           Write-Output "exit code: $($proc.ExitCode)"
           Get-Content smoke-write-stdout.log -ErrorAction SilentlyContinue
-          if ($proc.ExitCode -ne 0) { throw "smoke write failed (exit $($proc.ExitCode))" }
+          $marker = Get-Content "$env:APPDATA\RAFD\smoke-result.txt" -ErrorAction SilentlyContinue
+          Write-Output "marker: $marker"
+          if ($proc.ExitCode -ne 0 -or $marker -notmatch 'SMOKE_WRITE_OK') { throw "smoke write failed (exit $($proc.ExitCode), marker=$marker)" }
           Copy-Item "$env:APPDATA\RAFD\smoke-state.json" smoke-state.json -ErrorAction SilentlyContinue
         shell: pwsh
 
@@ -97,7 +99,9 @@ jobs:
           $proc = Start-Process -FilePath $exe -ArgumentList '--rafd-smoke-verify' -PassThru -Wait -RedirectStandardOutput smoke-verify-stdout.log
           Write-Output "exit code: $($proc.ExitCode)"
           Get-Content smoke-verify-stdout.log -ErrorAction SilentlyContinue
-          if ($proc.ExitCode -ne 0) { throw "smoke verify failed (exit $($proc.ExitCode))" }
+          $marker = Get-Content "$env:APPDATA\RAFD\smoke-result.txt" -ErrorAction SilentlyContinue
+          Write-Output "marker: $marker"
+          if ($proc.ExitCode -ne 0 -or $marker -notmatch 'SMOKE_VERIFY_OK') { throw "smoke verify failed (exit $($proc.ExitCode), marker=$marker)" }
         shell: pwsh
 
       - name: Cross-check مستقل — قراءة قاعدة SQLite من عملية Node منفصلة
