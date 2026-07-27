@@ -58,53 +58,17 @@ jobs:
         run: npx electron-builder --win nsis --publish never
         shell: pwsh
 
-      - name: Install silently + تشخيص سبب جذري (دفعة تشخيصية — تحقق فعلي لا تخمين)
+      - name: Install silently + تشغيل أول حقيقي
         id: install
         run: |
-          $ErrorActionPreference = 'Continue'
           $installer = Get-ChildItem dist\*.exe | Select-Object -First 1
           Write-Output "installer=$($installer.FullName) size=$($installer.Length)"
-
-          # س١: كود خروج العملية الأولى للمثبّت (لم يكن مطبوعًا سابقًا)
           $proc = Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait -PassThru
-          Write-Output "installer first-process exit code: $($proc.ExitCode)"
-
-          # س٣: NSIS oneClick قد يعيد إقلاع نفسه بعملية فرعية (فيرجع -Wait مبكرًا) +
-          # فحص Defender لملف 109MB غير موقَّع قد يؤخر النسخ — حلقية انتظار 90s كدليل تمييزي.
+          Write-Output "installer exit code: $($proc.ExitCode)"
+          Start-Sleep -Seconds 3
           $exe = "$env:LOCALAPPDATA\Programs\RAFD\RAFD.exe"
-          $pollStart = Get-Date
-          $found = $false
-          while (((Get-Date) - $pollStart).TotalSeconds -lt 90) {
-            if (Test-Path $exe) { $found = $true; break }
-            Start-Sleep -Seconds 2
-          }
-          $elapsed = [math]::Round(((Get-Date) - $pollStart).TotalSeconds, 1)
-          Write-Output "exe poll: found=$found elapsed=${elapsed}s window=90s"
-
-          # س٢: ماذا يوجد فعليًا في أماكن التثبيت المحتملة + آثار NSIS + عمليات باقية + Defender
-          Write-Output "=== %LOCALAPPDATA%\Programs ==="
-          Get-ChildItem "$env:LOCALAPPDATA\Programs" -ErrorAction SilentlyContinue | Select-Object Name, LastWriteTime | Format-Table -AutoSize
-          Write-Output "=== %LOCALAPPDATA%\Programs\RAFD (recursive) ==="
-          Get-ChildItem "$env:LOCALAPPDATA\Programs\RAFD" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName, Length | Format-Table -AutoSize
-          Write-Output "=== ProgramFiles (machine-level fallback) ==="
-          Get-ChildItem "$env:ProgramFiles" -ErrorAction SilentlyContinue | Where-Object Name -match 'RAFD' | Format-Table Name -AutoSize
-          Get-ChildItem "${env:ProgramFiles(x86)}" -ErrorAction SilentlyContinue | Where-Object Name -match 'RAFD' | Format-Table Name -AutoSize
-          Write-Output "=== NSIS staging dirs in %TEMP% (ns*.tmp) ==="
-          Get-ChildItem "$env:TEMP" -Directory -Filter 'ns*.tmp' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 5 Name, LastWriteTime | Format-Table -AutoSize
-          Write-Output "=== lingering RAFD/installer processes (قرين H1: عملية فرعية ما زالت تنسخ) ==="
-          Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'RAFD|nsis|Setup' } | Select-Object Id, Name, Path | Format-Table -AutoSize
-          Write-Output "=== Defender Operational events (قرين H2: حظر/عزل المثبّت) ==="
-          Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-Windows Defender/Operational'} -MaxEvents 5 -ErrorAction SilentlyContinue | Select-Object TimeCreated, Id, Message | Format-List
-          Write-Output "=== Application event log — MsiInstaller/AppErrors recent ==="
-          Get-WinEvent -FilterHashtable @{LogName='Application'; Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue | Select-Object TimeCreated, ProviderName, Id, Message | Format-List
-
-          if (-not $found) {
-            "INSTALL_DIAG_FAIL first_exit=$($proc.ExitCode) elapsed=${elapsed}s" | Out-File install-diag.log
-            throw "installed exe not found at $exe after 90s polling (installer first-process exit=$($proc.ExitCode))"
-          }
-          Write-Output "exe confirmed: $exe size=$((Get-Item $exe).Length)"
-
-          # تشغيل GUI أول حقيقي بعد تأكيد وجود التنفيذي فعليًا
+          if (-not (Test-Path $exe)) { throw "installed exe not found at $exe (installer exit=$($proc.ExitCode))" }
+          # تشغيل GUI عادي (بدون وضع الفحص) والتأكد أن العملية تبقى حية بلا انهيار
           $proc2 = Start-Process -FilePath $exe -PassThru
           Start-Sleep -Seconds 10
           if ($proc2.HasExited) { throw "app exited on first GUI launch (code=$($proc2.ExitCode))" }
@@ -172,7 +136,6 @@ jobs:
             artifact-meta.txt
             *-stdout.log
             smoke-state.json
-            install-diag.log
             gui-launch.log
           if-no-files-found: warn
 
@@ -192,7 +155,6 @@ jobs:
           - finished_utc: $(Get-Date -Format 'o')
           "@
           if (Test-Path artifact-meta.txt) { $status += "`n## artifact`n" + (Get-Content artifact-meta.txt -Raw) }
-          if (Test-Path install-diag.log) { $status += "`n## install diag`n``````" + "`n" + ((Get-Content install-diag.log) -join "`n") + "`n``````" }
           if (Test-Path smoke-write-stdout.log) { $status += "`n## smoke write tail`n``````" + "`n" + ((Get-Content smoke-write-stdout.log -Tail 5) -join "`n") + "`n``````" }
           if (Test-Path smoke-verify-stdout.log) { $status += "`n## smoke verify tail`n``````" + "`n" + ((Get-Content smoke-verify-stdout.log -Tail 5) -join "`n") + "`n``````" }
           $status | Out-File ci-status/LATEST.md -Encoding utf8
