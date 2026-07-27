@@ -3,24 +3,16 @@
  * ووضع فحص دخاني (--rafd-smoke / --rafd-smoke-verify) يُستخدم على GitHub Actions
  * windows-latest للتحقق الحقيقي من مسار: تفعيل → منتج → بيع → ثبات البيانات (§13).
  */
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { writeFileSync } from 'node:fs'
 import type { Db } from './db'
-import { createProduct, createSale, getSaleWithItems, listProducts, openDb } from './db'
-import {
-  loadLicenseStatus,
-  saveActivatedLicense,
-  verifyLicenseKey
-} from './license'
-import { IPC } from '../shared/types'
-import type {
-  ActivateResult,
-  LicenseStatus,
-  NewProduct,
-  SaleItemInput,
-  SaleWithItems
-} from '../shared/types'
+import { openDb } from './db'
+import { registerIpc } from './ipc'
+import { loadLicenseStatus, saveActivatedLicense, verifyLicenseKey } from './license'
+import { createProduct, listProducts } from './repos/products'
+import { createSale, getSaleWithItems } from './repos/sales'
+import type { SaleWithItems } from '../shared/types'
 
 // هوية التطبيق تُضبط من الكود مباشرةً قبل أي استدعاء آخر لـapp.* — userData
 // وكل المراجع المشتقة منها تنبع من مصدر موثوق واحد، بلا اعتماد على تخمين
@@ -38,32 +30,6 @@ const smokeMode: 'write' | 'verify' | null = process.argv.includes(SMOKE_WRITE)
 let db: Db
 const userDataDir = () => app.getPath('userData')
 const dbFilePath = () => join(userDataDir(), 'rafd.db')
-
-function registerIpc(): void {
-  ipcMain.handle(IPC.licenseStatus, (): LicenseStatus => loadLicenseStatus(userDataDir()))
-
-  ipcMain.handle(IPC.licenseActivate, (_event, key: string): ActivateResult => {
-    if (typeof key !== 'string') return { ok: false, error: 'مفتاح التفعيل مطلوب' }
-    const result = verifyLicenseKey(key)
-    if (!result.ok) return { ok: false, error: result.error }
-    saveActivatedLicense(userDataDir(), key, result.info)
-    return { ok: true, info: result.info }
-  })
-
-  ipcMain.handle(IPC.productsList, () => listProducts(db))
-
-  ipcMain.handle(IPC.productsCreate, (_event, payload: NewProduct) =>
-    createProduct(db, payload)
-  )
-
-  ipcMain.handle(IPC.salesCreate, (_event, payload: { items: SaleItemInput[]; paid: number }) =>
-    createSale(db, payload)
-  )
-
-  ipcMain.handle(IPC.salesGet, (_event, sale_id: number): SaleWithItems =>
-    getSaleWithItems(db, sale_id)
-  )
-}
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -180,7 +146,7 @@ if (smokeMode) {
 
 app.whenReady().then(async () => {
   db = openDb(dbFilePath())
-  registerIpc()
+  registerIpc(db, userDataDir())
   const win = createWindow()
 
   app.on('activate', () => {

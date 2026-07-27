@@ -18,7 +18,7 @@ import { basename } from 'node:path'
 export type Db = Database.Database
 
 /** إصدار المخطط المتوقَّع في هذا الإصدار من التطبيق */
-export const SCHEMA_VERSION_CODE = 1
+export const SCHEMA_VERSION_CODE = 2
 
 export interface Migration {
   version: number
@@ -341,8 +341,22 @@ function up_v1(db: Db): void {
   `)
 }
 
+/**
+ * الترقية v2 — ربط الفاتورة بالعميل (متطلب منطق «قيد العميل الآجل» في طبقة
+ * IPC، المرحلة 2): عمود اختياري SET NULL يحفظ الفواتير التاريخية عند حذف عميل.
+ */
+function up_v2(db: Db): void {
+  if (!hasColumn(db, 'sales', 'customer_id')) {
+    db.exec(
+      'ALTER TABLE sales ADD COLUMN customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL'
+    )
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sales_customer ON sales(customer_id)')
+}
+
 export const MIGRATIONS: readonly Migration[] = [
-  { version: 1, name: 'phase1-full-schema', up: up_v1 }
+  { version: 1, name: 'phase1-full-schema', up: up_v1 },
+  { version: 2, name: 'sales-customer-link', up: up_v2 }
 ]
 
 /* ------------------------------------------------------------------ */

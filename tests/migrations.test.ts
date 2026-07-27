@@ -89,7 +89,7 @@ describe('ترقية قاعدة جديدة كليًا', () => {
   })
 })
 
-describe('ترقية قاعدة عميل من المرحلة 0 (v0 → v1)', () => {
+describe('ترقية قاعدة عميل من المرحلة 0 (v0 → الإصدار الحالي)', () => {
   beforeEach(() => {
     const legacy = new Database(dbPath)
     legacy.exec(PHASE0_DDL)
@@ -106,10 +106,12 @@ describe('ترقية قاعدة عميل من المرحلة 0 (v0 → v1)', () 
 
   it('تأخذ نسخة احتياطية حقيقية قبل الترقية وتحفظ البيانات وتضيف الأعمدة', () => {
     const db = trackedOpen(dbPath)
-    expect(readSchemaVersion(db)).toBe(1)
+    // النسخة النهائية بعد كامل سلسلة الترقيات (v0→v1→v2 حاليًا) هي SCHEMA_VERSION_CODE
+    expect(readSchemaVersion(db)).toBe(SCHEMA_VERSION_CODE)
 
     // ملف النسخة موجود بحجم > 0 ويحمل حالة ما قبل الترقية (عدم وجود عمود sku فيه إثبات)
-    const backups = readdirSync(dir).filter((f) => f.includes('.backup-v0-to-v1-'))
+    // اسم الملف يتبع نمط backup-v0-to-v<CURRENT>- → يصمد أمام ترقيات مستقبلية
+    const backups = readdirSync(dir).filter((f) => f.includes('.backup-v0-to-v'))
     expect(backups).toHaveLength(1)
     const backupPath = join(dir, backups[0])
     expect(statSync(backupPath).size).toBeGreaterThan(0)
@@ -124,10 +126,18 @@ describe('ترقية قاعدة عميل من المرحلة 0 (v0 → v1)', () 
     backupDb.close()
     dbs.push(backupDb)
 
-    // البيانات الحية سالمة + الأعمدة الجديدة أُضيفت
+    // البيانات الحية سالمة + الأعمدة الجديدة أُضيفت (v1: sku/bank_account_id، v2: sales.customer_id)
     expect(hasColumn(db, 'products', 'sku')).toBe(true)
     expect(hasColumn(db, 'products', 'supplier_id')).toBe(true)
     expect(hasColumn(db, 'sales', 'bank_account_id')).toBe(true)
+    expect(hasColumn(db, 'sales', 'customer_id')).toBe(true)
+    expect(
+      (
+        db.prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_sales_customer'"
+        ).get() as { name: string } | undefined
+      )?.name
+    ).toBe('idx_sales_customer')
     const live = db.prepare('SELECT name, sku, category, sell_by_weight FROM products WHERE id = 1').get() as Record<
       string,
       unknown
@@ -148,7 +158,7 @@ describe('ترقية قاعدة عميل من المرحلة 0 (v0 → v1)', () 
     trackedOpen(dbPath).close()
     const backupsBefore = readdirSync(dir).filter((f) => f.includes('.backup-')).length
     const db = trackedOpen(dbPath)
-    expect(readSchemaVersion(db)).toBe(1)
+    expect(readSchemaVersion(db)).toBe(SCHEMA_VERSION_CODE)
     db.close()
     const backupsAfter = readdirSync(dir).filter((f) => f.includes('.backup-')).length
     expect(backupsAfter).toBe(backupsBefore)

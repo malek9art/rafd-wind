@@ -6,14 +6,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  createProduct,
-  createSale,
-  getSaleWithItems,
-  listProducts,
-  openDb,
-  type Db
-} from '../src/main/db'
+import { openDb, type Db } from '../src/main/db'
+import { createProduct, listProducts } from '../src/main/repos/products'
+import { createSale, getSaleWithItems } from '../src/main/repos/sales'
 
 let dir: string
 let dbPath: string
@@ -96,10 +91,11 @@ describe('sales', () => {
     expect(s2.sale.invoice_number).toBe('INV-000002')
   })
 
-  it('يرفض بيعًا فارغًا أو مدفوعًا ناقصًا أو مخزونًا غير كافٍ أو منتجًا مفقودًا', () => {
+  it('يرفض بيعًا فارغًا أو آجلًا بلا عميل أو مخزونًا غير كافٍ أو منتجًا مفقودًا', () => {
     const p = createProduct(db, { name: 'Cola', price: 5, stock: 2 })
     expect(() => createSale(db, { items: [], paid: 0 })).toThrow('بدون أصناف')
-    expect(() => createSale(db, { items: [{ product_id: p.id, quantity: 1 }], paid: 4 })).toThrow('أقل من إجمالي')
+    // المرحلة 2: الدفع الناقص لم يعد رفضًا عامًا — أصبح «بيعًا آجلًا» يتطلب عميلًا (سلوك مقصود، انظر repos/sales)
+    expect(() => createSale(db, { items: [{ product_id: p.id, quantity: 1 }], paid: 4 })).toThrow('البيع الآجل يتطلب اختيار عميل')
     expect(() => createSale(db, { items: [{ product_id: p.id, quantity: 5 }], paid: 25 })).toThrow('مخزون غير كافٍ')
     expect(() => createSale(db, { items: [{ product_id: 999, quantity: 1 }], paid: 5 })).toThrow('غير موجود')
     expect(() => createSale(db, { items: [{ product_id: p.id, quantity: 0 }], paid: 0 })).toThrow('الكمية')
