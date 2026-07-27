@@ -1,0 +1,186 @@
+# بناء .exe واختباره على ويندوز حقيقي — المسار الوحيد المعتمد للتحقق من التغليف (الوثيقة §13)
+name: windows-build-verify
+
+on:
+  push:
+    branches:
+      - 'arena/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write # لكتابة تقرير الحالة في ci-status/ (الوكيل لا يملك صلاحية قراءة نتائج Actions عبر API)
+
+env:
+  APP_STATE_DIR_NAME: RAFD # = productName في electron-builder.yml ⇒ %APPDATA%\RAFD
+
+jobs:
+  build-test-package:
+    runs-on: windows-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies (network واقعي مفتوح على الـrunner)
+        run: npm ci
+        shell: pwsh
+
+      - name: Unit + integration tests (Vitest على ويندوز حقيقي)
+        run: npm test
+        shell: pwsh
+
+      - name: Typecheck
+        run: npm run typecheck
+        shell: pwsh
+
+      - name: Build (electron-vite)
+        run: npm run build
+        shell: pwsh
+
+      # المرحلة 3: لا يوجد مفتاح خاص في المستودع. التوقيع يكون بالمفتاح الإنتاجي
+      # المخزَّن كسِرّ GitHub (RAFD_SIGNING_KEY_PEM) — يضبطه المشرف من مدير أسرار
+      # الإدارة. غيابه يفشل هذه الخطوة برسالة عربية صريحة من sign-license.mjs.
+      - name: Generate fresh test license (يوقَّع بمفتاح الإدارة من Secret، مفتاح جديد لكل تشغيل)
+        id: license
+        env:
+          RAFD_SIGNING_KEY_PEM: ${{ secrets.RAFD_SIGNING_KEY_PEM }}
+        run: |
+          $out = node tools/keygen/sign-license.mjs --customer "CI Test Store"
+          $license = ($out | Where-Object { $_ -notmatch '^#' }).Trim()
+          if ([string]::IsNullOrWhiteSpace($license)) { throw "license generation failed" }
+          "RAFD_TEST_LICENSE=$license" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Output "license generated (length=$($license.Length))"
+        shell: pwsh
+
+      - name: Package Windows NSIS installer
+        run: npx electron-builder --win nsis --publish never
+        shell: pwsh
+
+      - name: Install silently + اكتشاف المسار الفعلي + تشغيل أول حقيقي
+        id: install
+        run: |
+          $installer = Get-ChildItem dist\*.exe | Select-Object -First 1
+          Write-Output "installer=$($installer.FullName) size=$($installer.Length)"
+          $proc = Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait -PassThru
+          Write-Output "installer exit code: $($proc.ExitCode)"
+
+          # اكتشاف مسار التنفيذي فعليًا بدل افتراضه — تحسين دائم يمنع فئة «تخمين مسار التثبيت» كاملة
+          $exe = $null
+          $pollStart = Get-Date
+          while (((Get-Date) - $pollStart).TotalSeconds -lt 60) {
+            $found = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter 'RAFD.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $exe = $found.FullName; break }
+            Start-Sleep -Seconds 2
+          }
+          if (-not $exe) { throw "RAFD.exe not found anywhere under %LOCALAPPDATA%\Programs (installer exit=$($proc.ExitCode))" }
+          Write-Output "exe discovered at: $exe"
+          "RAFD_EXE_PATH=$exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          # تشغيل GUI عادي (بدون وضع الفحص) والتأكد أن العملية تبقى حية بلا انهيار
+          $proc2 = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 10
+          if ($proc2.HasExited) { throw "app exited on first GUI launch (code=$($proc2.ExitCode))" }
+          $proc2 | Stop-Process -Force
+          "GUI_LAUNCH_OK pid=$($proc2.Id) exe=$exe" | Out-File gui-launch.log
+          Get-Content gui-launch.log
+        shell: pwsh
+
+      - name: Smoke WRITE — تفعيل + منتج + بيع كامل داخل التطبيق المُثبَّت
+        id: smoke_write
+        run: |
+          $exe = $env:RAFD_EXE_PATH
+          if (-not $exe -or -not (Test-Path $exe)) { throw "RAFD_EXE_PATH missing or invalid: '$exe'" }
+          Write-Output "using exe: $exe"
+          Get-Process RAFD -ErrorAction SilentlyContinue | Stop-Process -Force
+          $env:ELECTRON_ENABLE_LOGGING = '1'
+          $proc = Start-Process -FilePath $exe -ArgumentList '--rafd-smoke' -PassThru -Wait -RedirectStandardOutput smoke-write-stdout.log
+          Write-Output "exit code: $($proc.ExitCode)"
+          Get-Content smoke-write-stdout.log -ErrorAction SilentlyContinue
+          $marker = Get-Content "$env:APPDATA\RAFD\smoke-result.txt" -ErrorAction SilentlyContinue
+          Write-Output "marker: $marker"
+          if ($proc.ExitCode -ne 0 -or $marker -notmatch 'SMOKE_WRITE_OK') { throw "smoke write failed (exit $($proc.ExitCode), marker=$marker)" }
+          Copy-Item "$env:APPDATA\RAFD\smoke-state.json" smoke-state.json -ErrorAction SilentlyContinue
+        shell: pwsh
+
+      - name: Smoke VERIFY — إعادة تشغيل والتحقق من ثبات البيانات (معيار نجاح المرحلة 0)
+        id: smoke_verify
+        run: |
+          $exe = $env:RAFD_EXE_PATH
+          if (-not $exe -or -not (Test-Path $exe)) { throw "RAFD_EXE_PATH missing or invalid: '$exe'" }
+          Write-Output "using exe: $exe"
+          $env:ELECTRON_ENABLE_LOGGING = '1'
+          $proc = Start-Process -FilePath $exe -ArgumentList '--rafd-smoke-verify' -PassThru -Wait -RedirectStandardOutput smoke-verify-stdout.log
+          Write-Output "exit code: $($proc.ExitCode)"
+          Get-Content smoke-verify-stdout.log -ErrorAction SilentlyContinue
+          $marker = Get-Content "$env:APPDATA\RAFD\smoke-result.txt" -ErrorAction SilentlyContinue
+          Write-Output "marker: $marker"
+          if ($proc.ExitCode -ne 0 -or $marker -notmatch 'SMOKE_VERIFY_OK') { throw "smoke verify failed (exit $($proc.ExitCode), marker=$marker)" }
+        shell: pwsh
+
+      - name: Cross-check مستقل — قراءة قاعدة SQLite من عملية Node منفصلة
+        id: cross_verify
+        run: |
+          node scripts/verify-db.mjs --dir "$env:APPDATA\RAFD"
+          if ($LASTEXITCODE -ne 0) { throw "cross verification failed" }
+        shell: pwsh
+
+      - name: Artifact metadata (sha256 + size bytes)
+        run: |
+          $installer = Get-ChildItem dist\*.exe | Select-Object -First 1
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLower()
+          $size = $installer.Length
+          $meta = "file=$($installer.Name)`nsha256=$hash`nsize_bytes=$size"
+          $meta | Out-File artifact-meta.txt -Encoding utf8
+          "### نتيجة البناء" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "- file: ``$($installer.Name)``" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "- sha256: ``$hash``" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "- size_bytes: ``$size``" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          Get-Content artifact-meta.txt
+        shell: pwsh
+        if: success()
+
+      - name: Upload installer + logs artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rafd-setup-windows
+          path: |
+            dist/*.exe
+            artifact-meta.txt
+            *-stdout.log
+            smoke-state.json
+            gui-launch.log
+          if-no-files-found: warn
+
+      - name: Write CI status to repo (ci-status/LATEST.md)
+        if: always()
+        continue-on-error: true
+        run: |
+          New-Item -ItemType Directory -Force -Path ci-status | Out-Null
+          $status = @"
+          # آخر نتيجة CI — windows-latest
+
+          - run_id: $($env:GITHUB_RUN_ID)
+          - run_attempt: $($env:GITHUB_RUN_ATTEMPT)
+          - run_url: $($env:GITHUB_SERVER_URL)/$($env:GITHUB_REPOSITORY)/actions/runs/$($env:GITHUB_RUN_ID)
+          - commit: $($env:GITHUB_SHA)
+          - job_status: ${{ job.status }}
+          - finished_utc: $(Get-Date -Format 'o')
+          "@
+          if (Test-Path artifact-meta.txt) { $status += "`n## artifact`n" + (Get-Content artifact-meta.txt -Raw) }
+          if (Test-Path smoke-write-stdout.log) { $status += "`n## smoke write tail`n``````" + "`n" + ((Get-Content smoke-write-stdout.log -Tail 5) -join "`n") + "`n``````" }
+          if (Test-Path smoke-verify-stdout.log) { $status += "`n## smoke verify tail`n``````" + "`n" + ((Get-Content smoke-verify-stdout.log -Tail 5) -join "`n") + "`n``````" }
+          $status | Out-File ci-status/LATEST.md -Encoding utf8
+          Get-Content ci-status/LATEST.md
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ci-status/LATEST.md
+          git commit -m "ci status: ${{ job.status }} [skip ci]"
+          git push

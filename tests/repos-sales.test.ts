@@ -1,0 +1,325 @@
+/**
+ * اختبارات تكامل: المبيعات — التركيز الإلزامي من التكليف:
+ * سقف خصم الكاشير (10% من subtotal)، قيد العميل الآجل، ترميز التحويل
+ * البنكي، ذرّية الفشل، إعادة المخزون عند الحذف، وسجل التدقيق لكل بيع.
+ */
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { openDb, type Db } from '../src/main/db'
+import { createProduct, getProduct } from '../src/main/repos/products'
+import { createCustomer, getCustomer } from '../src/main/repos/customers'
+import { listLedgerByCustomer } from '../src/main/repos/customerLedger'
+import { createBankAccount } from '../src/main/repos/crudSimple'
+import { listAuditLogs } from '../src/main/repos/auditLogs'
+import { createUser } from '../src/main/repos/users'
+import {
+  CASHIER_DISCOUNT_CAP,
+  createSale,
+  deleteSale,
+  getSaleWithItems,
+  listSales,
+  updateSale,
+  type ActorRef
+} from '../src/main/repos/sales'
+
+let dir: string
+let db: Db
+let MANAGER: ActorRef
+let CASHIER: ActorRef
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'rafd-sales-'))
+  db = openDb(join(dir, 't.db'))
+  // ممثّلون بمعرّفات مستخدمين حقيقية — audit_logs.user_id له FK إلى app_users
+  // (أي معرّف مُختلَق تعني كتابة تدقيق تُبتلع صامتًا، فيخفى شذوذ محتمل)
+  MANAGER = { userId: createUser(db, { full_name: 'مدير', role: 'manager' }).id, role: 'manager' }
+  CASHIER = { userId: createUser(db, { full_name: 'كاشير', role: 'cashier' }).id, role: 'cashier' }
+})
+afterEach(() => {
+  try {
+    db.close()
+  } catch {
+    /* closed */
+  }
+  rmSync(dir, { recursive: true, force: true })
+})
+
+/** منتج اختباري بسعر/مخزون معطيين */
+function seedProduct(price = 100, stock = 10): number {
+  return createProduct(db, { name: 'صنف', price, stock }).id
+}
+
+describe('إتمام بيع', () => {
+  it('فاتورة مرقّمة تلقائيًا + أسعار من القاعدة لا من الواجهة + تنقيص مخزون', () => {
+    const pid = seedProduct(45, 5)
+    const { sale, items } = createSale(db, { items: [{ product_id: pid, quantity: 2 }], paid: 90 }, MANAGER)
+    expect(sale.invoice_number).toBe('INV-000001')
+    expect(sale.total).toBe(90)
+    expect(sale.paid).toBe(90)
+    expect(sale.customer_id).toBeNull()
+    expect(items).toHaveLength(1)
+    expect(items[0].unit_price).toBe(45)
+    expect(items[0].total).toBe(90)
+    expect(getProduct(db, pid).stock).toBe(3)
+
+    const second = createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 45 }, MANAGER)
+    expect(second.sale.invoice_number).toBe('INV-000002')
+  })
+
+  it('يرفض: بلا بنود، كمية صفر، منتج مجهول، مخزون ناقص — ولا يترك أثرًا', () => {
+    const pid = seedProduct(10, 2)
+    expect(() => createSale(db, { items: [], paid: 0 }, MANAGER)).toThrow('بدون أصناف')
+    expect(() =>
+      createSale(db, { items: [{ product_id: pid, quantity: 0 }], paid: 0 }, MANAGER)
+    ).toThrow('الكمية يجب أن تكون أكبر من صفر')
+    expect(() =>
+      createSale(db, { items: [{ product_id: 999, quantity: 1 }], paid: 10 }, MANAGER)
+    ).toThrow('منتج غير موجود: 999')
+    expect(() =>
+      createSale(db, { items: [{ product_id: pid, quantity: 3 }], paid: 30 }, MANAGER)
+    ).toThrow('مخزون غير كافٍ')
+
+    expect(listSales(db)).toHaveLength(0)
+    expect(getProduct(db, pid).stock).toBe(2)
+  })
+})
+
+describe('سقف خصم الكاشير (10% من subtotal)', () => {
+  it('خصم = السقف بالضبط يمر، وتجاوزه بقرش يرمي ولا يغيّر المخزون', () => {
+    const pid = seedProduct(100, 10)
+    expect(CASHIER_DISCOUNT_CAP).toBe(0.1)
+
+    // subtotal = 200 → السقف 20 بالضبط
+    const ok = createSale(
+      db,
+      { items: [{ product_id: pid, quantity: 2 }], paid: 180, discount: 20 },
+      CASHIER
+    )
+    expect(ok.sale.total).toBe(180)
+
+    expect(() =>
+      createSale(
+        db,
+        { items: [{ product_id: pid, quantity: 2 }], paid: 179.99, discount: 20.01 },
+        CASHIER
+      )
+    ).toThrow('خصم الكاشير يتجاوز السقف')
+    // ذرّية رفض السقف: لا فاتورة ثانية ولا تنقيص مخزون إضافي
+    expect(listSales(db)).toHaveLength(1)
+    expect(getProduct(db, pid).stock).toBe(8)
+  })
+
+  it('الأدوار الأخرى بلا سقف، لكن الخصم فوق subtotal ممنوع للجميع', () => {
+    const pid = seedProduct(100, 10)
+    const sale = createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 50, discount: 50 }, MANAGER)
+    expect(sale.sale.total).toBe(50)
+
+    expect(() =>
+      createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 0, discount: 150 }, MANAGER)
+    ).toThrow('الخصم يتجاوز إجمالي الفاتورة')
+    expect(() =>
+      createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 0, discount: -5 }, MANAGER)
+    ).toThrow('قيمة الخصم غير صالحة')
+  })
+})
+
+describe('العميل الآجل', () => {
+  it('متبقٍّ > 0 مع عميل: قيد sale_credit بمرجع الفاتورة + إجمالي مشتريات يزداد دائمًا', () => {
+    const pid = seedProduct(45, 5)
+    const cust = createCustomer(db, { name: 'أحمد' })
+
+    const { sale } = createSale(
+      db,
+      { items: [{ product_id: pid, quantity: 2 }], paid: 40, customer_id: cust.id },
+      MANAGER
+    )
+    // subtotal 90، مدفوع 40 → متبقٍّ 50
+    expect(sale.total).toBe(90)
+    expect(sale.customer_id).toBe(cust.id)
+
+    const after = getCustomer(db, cust.id)
+    expect(after.balance).toBe(50)
+    expect(after.total_purchases).toBe(90)
+
+    const ledger = listLedgerByCustomer(db, cust.id)
+    expect(ledger).toHaveLength(1)
+    expect(ledger[0].type).toBe('sale_credit')
+    expect(ledger[0].amount).toBe(50)
+    expect(ledger[0].balance_after).toBe(50)
+    expect(ledger[0].reference).toBe(sale.invoice_number)
+    expect(ledger[0].sale_id).toBe(sale.id)
+
+    // بيع ثانٍ مدفوع بالكامل: لا قيد جديد، لكن total_purchases يتراكم دائمًا
+    const second = createSale(
+      db,
+      { items: [{ product_id: pid, quantity: 1 }], paid: 45, customer_id: cust.id },
+      MANAGER
+    )
+    expect(second.sale.total).toBe(45)
+    expect(listLedgerByCustomer(db, cust.id)).toHaveLength(1)
+    const after2 = getCustomer(db, cust.id)
+    expect(after2.total_purchases).toBe(135)
+    expect(after2.balance).toBe(50)
+  })
+
+  it('ذرّية: بيع آجل بدون عميل يرمي ولا ينقّص المخزون ولا يكتب فاتورة', () => {
+    const pid = seedProduct(45, 5)
+    expect(() => createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 10 }, MANAGER)).toThrow(
+      'البيع الآجل يتطلب اختيار عميل'
+    )
+    expect(listSales(db)).toHaveLength(0)
+    expect(getProduct(db, pid).stock).toBe(5)
+  })
+
+  it('overpay نقدي بدون عميل مسموح (الفرق باقٍ نقدًا، لا دين)', () => {
+    const pid = seedProduct(45, 5)
+    const { sale } = createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 100 }, MANAGER)
+    expect(sale.total).toBe(45)
+    expect(sale.paid).toBe(100)
+    expect(listSales(db)).toHaveLength(1)
+  })
+
+  it('عميل مجهول يُرفض ولا يترك أثرًا', () => {
+    const pid = seedProduct(45, 5)
+    expect(() =>
+      createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 45, customer_id: 999 }, MANAGER)
+    ).toThrow('عميل غير موجود: 999')
+    expect(listSales(db)).toHaveLength(0)
+  })
+})
+
+describe('التحويل البنكي', () => {
+  it('transfer يتطلب حسابًا حقيقيًا ويُخزَّن مرجعًا في الفاتورة', () => {
+    const pid = seedProduct(30, 3)
+    const bank = createBankAccount(db, { bank_name: 'بنك التضامن', account_name: 'المتجر' })
+
+    expect(() =>
+      createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 30, payment_method: 'transfer' }, MANAGER)
+    ).toThrow('التحويل البنكي يتطلب اختيار حساب بنكي')
+    expect(() =>
+      createSale(
+        db,
+        { items: [{ product_id: pid, quantity: 1 }], paid: 30, payment_method: 'transfer', bank_account_id: 999 },
+        MANAGER
+      )
+    ).toThrow('حساب بنكي غير موجود: 999')
+    // ذرّية الفشلين
+    expect(getProduct(db, pid).stock).toBe(3)
+    expect(listSales(db)).toHaveLength(0)
+
+    const { sale } = createSale(
+      db,
+      { items: [{ product_id: pid, quantity: 1 }], paid: 30, payment_method: 'transfer', bank_account_id: bank.id },
+      MANAGER
+    )
+    expect(sale.bank_account_id).toBe(bank.id)
+    expect(listSales(db)).toHaveLength(1)
+  })
+})
+
+describe('قراءة وتعديل وحذف', () => {
+  it('list بفلتر customer_id وget بالبنود', () => {
+    const pid = seedProduct(10, 10)
+    const c1 = createCustomer(db, { name: 'أ' }).id
+    const c2 = createCustomer(db, { name: 'ب' }).id
+    createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 10, customer_id: c1 }, MANAGER)
+    createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 10, customer_id: c2 }, MANAGER)
+    createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 10 }, MANAGER)
+
+    expect(listSales(db)).toHaveLength(3)
+    const mine = listSales(db, { customer_id: c1 })
+    expect(mine).toHaveLength(1)
+    expect(mine[0].customer_id).toBe(c1)
+
+    const full = getSaleWithItems(db, mine[0].id)
+    expect(full.items).toHaveLength(1)
+    expect(full.items[0].product_name).toBe('صنف')
+    expect(() => getSaleWithItems(db, 999)).toThrow('فاتورة غير موجودة: 999')
+  })
+
+  it('update محافظ: paid وbank_account_id فقط ولا يمسّ total', () => {
+    const pid = seedProduct(10, 10)
+    const { sale } = createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 10 }, MANAGER)
+    const bank = createBankAccount(db, { bank_name: 'ب', account_name: 'ح' })
+
+    const updated = updateSale(db, sale.id, { paid: 6, bank_account_id: bank.id }, MANAGER)
+    expect(updated.paid).toBe(6)
+    expect(updated.bank_account_id).toBe(bank.id)
+    expect(updated.total).toBe(10)
+
+    expect(() => updateSale(db, sale.id, { paid: -1 }, MANAGER)).toThrow('المبلغ المدفوع غير صالح')
+    expect(() => updateSale(db, sale.id, { bank_account_id: 999 }, MANAGER)).toThrow('حساب بنكي غير موجود: 999')
+    expect(() => updateSale(db, 999, { paid: 1 }, MANAGER)).toThrow('فاتورة غير موجودة: 999')
+    // التحديثات الفاشلة لم تُغيّر شيئًا
+    const still = getSaleWithItems(db, sale.id).sale
+    expect(still.paid).toBe(6)
+    expect(still.bank_account_id).toBe(bank.id)
+  })
+
+  it('حذف فاتورة نقدية يعيد المخزون', () => {
+    const pid = seedProduct(10, 3)
+    const { sale } = createSale(db, { items: [{ product_id: pid, quantity: 2 }], paid: 20 }, MANAGER)
+    expect(getProduct(db, pid).stock).toBe(1)
+
+    deleteSale(db, sale.id, MANAGER)
+    expect(listSales(db)).toHaveLength(0)
+    expect(getProduct(db, pid).stock).toBe(3)
+    expect(() => getSaleWithItems(db, sale.id)).toThrow('فاتورة غير موجودة')
+  })
+
+  it('حذف فاتورة آجلة محظور مع قيود مرتبطة، ويُسمح بعد تسوية الدفتر', () => {
+    const pid = seedProduct(50, 3)
+    const cust = createCustomer(db, { name: 'أحمد' })
+    const { sale } = createSale(
+      db,
+      { items: [{ product_id: pid, quantity: 1 }], paid: 20, customer_id: cust.id },
+      MANAGER
+    )
+    expect(listLedgerByCustomer(db, cust.id)).toHaveLength(1)
+
+    expect(() => deleteSale(db, sale.id, MANAGER)).toThrow('لا يمكن حذف فاتورة لها قيود دفتر عميل')
+    expect(getProduct(db, pid).stock).toBe(2) // المحاولة الفاشلة لم تُعد مخزونًا جزئيًا
+
+    // «سوِّ الدفتر أولًا»: إزالة قيود هذه الفاتورة (شاشة العميل في مرحلة لاحقة؛ هنا بالمعنى نفسه)
+    db.prepare('DELETE FROM customer_ledger WHERE sale_id = ?').run(sale.id)
+    deleteSale(db, sale.id, MANAGER)
+    expect(listSales(db)).toHaveLength(0)
+    expect(getProduct(db, pid).stock).toBe(3)
+  })
+})
+
+describe('سجل التدقيق', () => {
+  it('كل عملية بيع تكتب صفًا بـuser_id المستدعي وبيانات الكيان', () => {
+    // user_id في audit_logs له FK إلى app_users — المستدعي هنا يمثل جلسة
+    // حقيقية (في الإنتاج يأتي دائمًا من login عبر getCurrentUser)، لذا ننشئ
+    // مستخدمين فعليين وإلا ابتلع writeAudit الصف بهدوء (سلوك مقصود).
+    const writer = createUser(db, { full_name: 'كاتب' })
+    const updater = createUser(db, { full_name: 'معدّل' })
+    const deleter = createUser(db, { full_name: 'حاذف' })
+
+    const pid = seedProduct(10, 5)
+    const { sale } = createSale(
+      db,
+      { items: [{ product_id: pid, quantity: 1 }], paid: 10 },
+      { userId: writer.id, role: 'manager' }
+    )
+    const creates = listAuditLogs(db, { action: 'sale.create' })
+    expect(creates).toHaveLength(1)
+    expect(creates[0].user_id).toBe(writer.id)
+    expect(creates[0].entity_type).toBe('sales')
+    expect(creates[0].entity_id).toBe(sale.id)
+    expect(JSON.parse(creates[0].meta as string).invoice_number).toBe(sale.invoice_number)
+
+    updateSale(db, sale.id, { paid: 9 }, { userId: updater.id, role: 'manager' })
+    deleteSale(db, sale.id, { userId: deleter.id, role: 'manager' })
+
+    const updates = listAuditLogs(db, { action: 'sale.update' })
+    expect(updates).toHaveLength(1)
+    expect(updates[0].user_id).toBe(updater.id)
+    const deletes = listAuditLogs(db, { action: 'sale.delete' })
+    expect(deletes).toHaveLength(1)
+    expect(deletes[0].user_id).toBe(deleter.id)
+  })
+})

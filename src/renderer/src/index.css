@@ -1,0 +1,166 @@
+@import 'tailwindcss';
+
+/*
+ * الهوية البصرية (الوثيقة §18) — منقولة حرفيًا من rafd-app:
+ * الدرجات الكاملة لنطاقات rafd/sand/ink = نطاقات Tailwind teal/amber/slate
+ * (تطابق مؤكَّد من المشرف مقابل rafd-app الفعلي: rafd-600=#0d9488=teal-600 …)،
+ * وقيم الظلال الثلاثة أدناه منسوخة حرفيًا من rafd-app/src/index.css (السطور 40-42).
+ */
+@theme {
+  --breakpoint-xs: 30rem;
+
+  --color-rafd-50: #f0fdfa;
+  --color-rafd-100: #ccfbf1;
+  --color-rafd-200: #99f6e4;
+  --color-rafd-300: #5eead4;
+  --color-rafd-400: #2dd4bf;
+  --color-rafd-500: #14b8a6;
+  --color-rafd-600: #0d9488;
+  --color-rafd-700: #0f766e;
+  --color-rafd-800: #115e59;
+  --color-rafd-900: #134e4a;
+  --color-rafd-950: #042f2e;
+
+  --color-sand-50: #fffbeb;
+  --color-sand-100: #fef3c7;
+  --color-sand-200: #fde68a;
+  --color-sand-300: #fcd34d;
+  --color-sand-400: #fbbf24;
+  --color-sand-500: #f59e0b;
+  --color-sand-600: #d97706;
+  --color-sand-700: #b45309;
+  --color-sand-800: #92400e;
+  --color-sand-900: #78350f;
+  --color-sand-950: #451a03;
+
+  --color-ink-50: #f8fafc;
+  --color-ink-100: #f1f5f9;
+  --color-ink-200: #e2e8f0;
+  --color-ink-300: #cbd5e1;
+  --color-ink-400: #94a3b8;
+  --color-ink-500: #64748b;
+  --color-ink-600: #475569;
+  --color-ink-700: #334155;
+  --color-ink-800: #1e293b;
+  --color-ink-900: #0f172a;
+  --color-ink-950: #020617;
+
+  --font-sans: 'IBM Plex Sans Arabic', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* متغيرات الثيم (§18.2) — وضع فاتح؛ الوضع الداكن جاهز عبر .dark */
+:root {
+  --bg: #f4f7f8;
+  --bg-elevated: #ffffff;
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --primary: #0d9488;
+  --accent: #d97706;
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --info: #0284c7;
+  --sidebar: #042f2e;
+  --sidebar-text: #ccfbf1;
+
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.04);
+  --shadow-lift: 0 8px 24px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+  --shadow-glow: 0 0 0 3px rgba(13, 148, 136, 0.18);
+}
+
+.dark {
+  --bg: #020617;
+  --bg-elevated: #0f172a;
+  --text: #f8fafc;
+  --text-muted: #94a3b8;
+  --primary: #2dd4bf;
+  --accent: #fbbf24;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --info: #38bdf8;
+  --sidebar: #020617;
+  --sidebar-text: #e2e8f0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+@layer components {
+  .card {
+    background: var(--bg-elevated);
+    border-radius: var(--radius-2xl);
+    box-shadow: var(--shadow-soft);
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: var(--radius-xl);
+    font-weight: 600;
+    padding: 0.625rem 1.25rem;
+    transition: filter 0.15s ease;
+    cursor: pointer;
+  }
+  .btn:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-glow);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: var(--primary);
+    color: #fff;
+  }
+  .btn-primary:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--color-ink-200);
+  }
+  .input {
+    width: 100%;
+    border: 1px solid var(--color-ink-200);
+    border-radius: var(--radius-xl);
+    padding: 0.6rem 0.9rem;
+    background: var(--bg-elevated);
+    color: var(--text);
+  }
+  .input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: var(--shadow-glow);
+  }
+  .label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 0.35rem;
+  }
+}
+
+/* الإيصال عند الطباعة (§15 — إيصال بسيط) */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #receipt-print-area,
+  #receipt-print-area * {
+    visibility: visible;
+  }
+  #receipt-print-area {
+    position: absolute;
+    inset: 0;
+    width: 80mm;
+    padding: 4mm;
+  }
+}

@@ -1,0 +1,24 @@
+# إعداد تغليف ويندوز — NSIS (الوثيقة §13: التحقق عبر windows-latest)
+appId: com.rafd.wind
+productName: RAFD
+copyright: Copyright © 2026
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**
+  - package.json
+# الوحدة الأصلية better-sqlite3 لا يمكن تحميلها من داخل أرشيف asar
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+win:
+  target:
+    - nsis
+  artifactName: ${productName}-Setup-${version}.${ext}
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  shortcutName: RAFD POS
+  runAfterFinish: false
