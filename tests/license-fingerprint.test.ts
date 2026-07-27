@@ -97,10 +97,11 @@ describe('getDeviceFingerprint — تخزين مؤقت وثبات', () => {
   })
 
   it('نفس مخرجات exec تعطي بصمة componentsToFingerprint ذاتها (اتساق الطبقات)', () => {
-    // منصة هذه البيئة لينكس — الحقن على فرعها (مسارا cat/lsblk)
+    // getDeviceFingerprint يعمل على منصة العدّاء نفسها (linux محليًا، win32 في CI)
+    // — الحقن يغطي أنماط أوامر الفرعين معًا ليبقى الاختبار حتميًا على المنصتين
     const fakeExec: ShellExec = (cmd) => {
-      if (cmd.startsWith('cat /sys/')) return 'uuid-consistent'
-      if (cmd.startsWith('lsblk')) return 'disk-consistent'
+      if (cmd.startsWith('cat /sys/') || cmd.includes('ComputerSystemProduct')) return 'uuid-consistent'
+      if (cmd.startsWith('lsblk') || cmd.includes('Win32_DiskDrive')) return 'disk-consistent'
       return ''
     }
     const viaGetter = getDeviceFingerprint(fakeExec)
