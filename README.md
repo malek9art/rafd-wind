@@ -5,10 +5,12 @@
 
 ## الحالة
 
-**المرحلة 0 — الهيكل العظمي (Walking Skeleton):**
-Electron + electron-vite + React/TS/Tailwind v4 · SQLite (better-sqlite3) محلية في `userData` ·
-تفعيل Ed25519 بمفتاح تجريبي · مسار: تفعيل → منتج → بيع → حفظ → إيصال ·
-بناء `.exe` (NSIS) واختباره على GitHub Actions `windows-latest`.
+**المرحلة 0 — معتمدة** (تحقق ويندوز حقيقي كامل على windows-latest: تثبيت → تشغيل → تفعيل+بيع → ثبات بعد إعادة التشغيل → cross-check لـSQLite).
+
+**المرحلة 1 — المخطط الكامل + ترقيم الإصدارات:**
+خريطة جداول §6 كاملة (16 جدولًا، بلا `tenant_id`) · نظام `schema_version` مع نسخة احتياطية
+إلزامية قبل كل ترقية (§9) · مستخدمون محليون بـPIN (scrypt المدمج، بلا اعتماديات جديدة) ·
+اختبارات تكامل لكل قيد مرجعي (CASCADE / SET NULL / orphans / UNIQUE).
 
 ## الأوامر
 

@@ -6,7 +6,7 @@
 import Database from 'better-sqlite3'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { SCHEMA_DDL } from './schema'
+import { ensureMigrated } from './migrations'
 import type {
   NewProduct,
   Product,
@@ -28,7 +28,8 @@ export function openDb(dbPath: string): Db {
   const db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
-  db.exec(SCHEMA_DDL)
+  // §9: الترقيات (مع النسخة الاحتياطية) تُشغَّل قبل إتاحة الاتصال لأي شاشة
+  ensureMigrated(db, dbPath)
   return db
 }
 
