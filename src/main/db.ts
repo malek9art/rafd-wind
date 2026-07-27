@@ -28,8 +28,15 @@ export function openDb(dbPath: string): Db {
   const db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
-  // §9: الترقيات (مع النسخة الاحتياطية) تُشغَّل قبل إتاحة الاتصال لأي شاشة
-  ensureMigrated(db, dbPath)
+  // §9: الترقيات (مع النسخة الاحتياطية) تُشغَّل قبل إتاحة الاتصال لأي شاشة.
+  // أي استثناء من الترقية (رفض إصدار أحدث، فشل ترقية مستقبلي) يجب ألا يُبقي
+  // مقبض SQLite مفتوحًا — على ويندوز يمنع المقبض المُسرَّب حذف/استبدال الملف (EPERM).
+  try {
+    ensureMigrated(db, dbPath)
+  } catch (err) {
+    db.close()
+    throw err
+  }
   return db
 }
 
