@@ -58,29 +58,41 @@ jobs:
         run: npx electron-builder --win nsis --publish never
         shell: pwsh
 
-      - name: Install silently + تشغيل أول حقيقي
+      - name: Install silently + اكتشاف المسار الفعلي + تشغيل أول حقيقي
         id: install
         run: |
           $installer = Get-ChildItem dist\*.exe | Select-Object -First 1
           Write-Output "installer=$($installer.FullName) size=$($installer.Length)"
           $proc = Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait -PassThru
           Write-Output "installer exit code: $($proc.ExitCode)"
-          Start-Sleep -Seconds 3
-          $exe = "$env:LOCALAPPDATA\Programs\RAFD\RAFD.exe"
-          if (-not (Test-Path $exe)) { throw "installed exe not found at $exe (installer exit=$($proc.ExitCode))" }
+
+          # اكتشاف مسار التنفيذي فعليًا بدل افتراضه — تحسين دائم يمنع فئة «تخمين مسار التثبيت» كاملة
+          $exe = $null
+          $pollStart = Get-Date
+          while (((Get-Date) - $pollStart).TotalSeconds -lt 60) {
+            $found = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter 'RAFD.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $exe = $found.FullName; break }
+            Start-Sleep -Seconds 2
+          }
+          if (-not $exe) { throw "RAFD.exe not found anywhere under %LOCALAPPDATA%\Programs (installer exit=$($proc.ExitCode))" }
+          Write-Output "exe discovered at: $exe"
+          "RAFD_EXE_PATH=$exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
           # تشغيل GUI عادي (بدون وضع الفحص) والتأكد أن العملية تبقى حية بلا انهيار
           $proc2 = Start-Process -FilePath $exe -PassThru
           Start-Sleep -Seconds 10
           if ($proc2.HasExited) { throw "app exited on first GUI launch (code=$($proc2.ExitCode))" }
           $proc2 | Stop-Process -Force
-          "GUI_LAUNCH_OK pid=$($proc2.Id)" | Out-File gui-launch.log
+          "GUI_LAUNCH_OK pid=$($proc2.Id) exe=$exe" | Out-File gui-launch.log
           Get-Content gui-launch.log
         shell: pwsh
 
       - name: Smoke WRITE — تفعيل + منتج + بيع كامل داخل التطبيق المُثبَّت
         id: smoke_write
         run: |
-          $exe = "$env:LOCALAPPDATA\Programs\RAFD\RAFD.exe"
+          $exe = $env:RAFD_EXE_PATH
+          if (-not $exe -or -not (Test-Path $exe)) { throw "RAFD_EXE_PATH missing or invalid: '$exe'" }
+          Write-Output "using exe: $exe"
           Get-Process RAFD -ErrorAction SilentlyContinue | Stop-Process -Force
           $env:ELECTRON_ENABLE_LOGGING = '1'
           $proc = Start-Process -FilePath $exe -ArgumentList '--rafd-smoke' -PassThru -Wait -RedirectStandardOutput smoke-write-stdout.log
@@ -95,7 +107,9 @@ jobs:
       - name: Smoke VERIFY — إعادة تشغيل والتحقق من ثبات البيانات (معيار نجاح المرحلة 0)
         id: smoke_verify
         run: |
-          $exe = "$env:LOCALAPPDATA\Programs\RAFD\RAFD.exe"
+          $exe = $env:RAFD_EXE_PATH
+          if (-not $exe -or -not (Test-Path $exe)) { throw "RAFD_EXE_PATH missing or invalid: '$exe'" }
+          Write-Output "using exe: $exe"
           $env:ELECTRON_ENABLE_LOGGING = '1'
           $proc = Start-Process -FilePath $exe -ArgumentList '--rafd-smoke-verify' -PassThru -Wait -RedirectStandardOutput smoke-verify-stdout.log
           Write-Output "exit code: $($proc.ExitCode)"

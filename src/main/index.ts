@@ -22,6 +22,11 @@ import type {
   SaleWithItems
 } from '../shared/types'
 
+// هوية التطبيق تُضبط من الكود مباشرةً قبل أي استدعاء آخر لـapp.* — userData
+// وكل المراجع المشتقة منها تنبع من مصدر موثوق واحد، بلا اعتماد على تخمين
+// قراءة حقول package.json من جانب أدوات التغليف.
+app.setName('RAFD')
+
 const SMOKE_WRITE = '--rafd-smoke'
 const SMOKE_VERIFY = '--rafd-smoke-verify'
 const smokeMode: 'write' | 'verify' | null = process.argv.includes(SMOKE_WRITE)
