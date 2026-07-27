@@ -1,8 +1,12 @@
 # آخر نتيجة CI — windows-latest
 
-- run_id: 30225173530
+- run_id: 30226504559
 - run_attempt: 1
-- run_url: https://github.com/malek9art/rafd-wind/actions/runs/30225173530
-- commit: e56205b324a459225eed905b79bbc654582c0c29
+- run_url: https://github.com/malek9art/rafd-wind/actions/runs/30226504559
+- commit: d59fae6450526888fb76703c5816cdf904fb2ee3
 - job_status: failure
-- finished_utc: 2026-07-26T23:30:32.6516738+00:00
+- finished_utc: 2026-07-27T00:06:50.3412736+00:00
+## install diag
+```
+INSTALL_DIAG_FAIL first_exit=0 elapsed=90.4s
+```
