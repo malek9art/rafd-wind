@@ -33,7 +33,8 @@ import type {
 const api: RafdLocalApi = {
   license: {
     status: () => ipcRenderer.invoke(IPC.licenseStatus),
-    activate: (key: string) => ipcRenderer.invoke(IPC.licenseActivate, key)
+    activate: (key: string) => ipcRenderer.invoke(IPC.licenseActivate, key),
+    fingerprint: () => ipcRenderer.invoke(IPC.licenseFingerprint)
   },
   products: {
     list: (filters) => ipcRenderer.invoke(IPC.productsList, filters),

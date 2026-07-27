@@ -393,12 +393,23 @@ export interface LicenseInfo {
   expires_at: string
 }
 
+/**
+ * §8.3: المنتهِي يبقى activated=true مع expired=true — يفتح التطبيق للقراءة
+ * ويتولى قفلَ الكتابة بوابةٌ مركزية في main. expiring_soon تنبيه غير مانع
+ * ضمن 7 أيام قبل الانتهاء (تعرضه الواجهة في المرحلة 4).
+ */
 export type LicenseStatus =
-  | { activated: true; info: LicenseInfo }
+  | {
+      activated: true
+      info: LicenseInfo
+      expired: boolean
+      expiring_soon: boolean
+      days_left: number
+    }
   | { activated: false; reason?: string }
 
 export type ActivateResult =
-  | { ok: true; info: LicenseInfo }
+  | { ok: true; info: LicenseInfo; expired: boolean; expiring_soon: boolean }
   | { ok: false; error: string }
 
 /* ------------------------------ عقد IPC الكامل (§7) ------------------------------ */
@@ -408,6 +419,8 @@ export interface RafdLocalApi {
   license: {
     status(): Promise<LicenseStatus>
     activate(key: string): Promise<ActivateResult>
+    /** بصمة الجهاز الحالية (§8.2) — لعرضها للإدارة عند طلب ترخيص مربوط */
+    fingerprint(): Promise<string>
   }
   products: {
     list(filters?: { active_only?: boolean; category?: string }): Promise<Product[]>
@@ -490,6 +503,7 @@ export interface RafdLocalApi {
 export const IPC = {
   licenseStatus: 'license:status',
   licenseActivate: 'license:activate',
+  licenseFingerprint: 'license:fingerprint',
   productsList: 'products:list',
   productsCreate: 'products:create',
   productsUpdate: 'products:update',

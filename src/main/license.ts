@@ -1,21 +1,33 @@
 /**
- * نظام الترخيص — المرحلة 0 (الوثيقة §8 + خارطة الطريق):
- * - مفتاح موقَّع بـEd25519: RAFD1.<base64url(payload)>.<base64url(signature)>
- * - التحقق محلي بالكامل بمفتاح عام مضمَّن في الكود (license-public-key.ts).
- * - حالة الترخيص لا تُقرأ كقيمة خام مخزَّنة؛ يُعاد التحقق من التوقيع عند كل تشغيل (§11).
- * - المفتاح الخاص في tools/keygen (خارج التطبيق الموزَّع) وأداة CLI الحقيقية في المرحلة 3.
+ * نظام الترخيص — المرحلة 3 (الوثيقة §8 كاملًا):
  *
- * تبسيطات المرحلة 0 (تُستكمل في المرحلة 3):
- * - بصمة الجهاز (§8.2) غير مطبَّقة بعد (الحقل device_binding يُقبل لكن لا يُفحص).
- * - المفتاح المنتهي يُعامَل كغير صالح (منع دخول كامل)؛ نمط «قفل الكتابة مع قراءة حرة» (§8.3) لاحقًا.
+ * - مفتاح موقَّع بـEd25519: RAFD1.<base64url(payload)>.<base64url(signature)>
+ *   التحقق محلي بالكامل بالمفتاح العام الإنتاجي المضمَّن (license-public-key.ts) (§8.1).
+ * - بصمة الجهاز فعلية (§8.2): حقل device_binding في الحمولة، إن وُجد، يُطابَق مع
+ *   بصمة الجهاز الحالية؛ عدم التطابق = رفض صريح. غياب الحقل = ترخيص غير مربوط.
+ * - دورة الحياة (§8.3): التحقق لم يعد «صالح/غير صالح» فقط —
+ *     • صالح: عمل طبيعي (flags كلها false).
+ *     • قارب على الانتهاء (نافذة 7 أيام): expiring_soon=true — تنبيه غير مانع.
+ *     • منتهٍ: التحقق ينجح مع expired=true — **قفل الكتابة فقط** عبر
+ *       license-gate.ts (القراءة حرة دائمًا).
+ *     • توقيع/بنية/ربط فاسد: ok=false — منع الدخول الكامل من البداية (كما كان).
+ * - حالة الترخيص لا تُقرأ كقيمة خام مخزَّنة؛ يُعاد التحقق توقيعيًا عند كل تشغيل (§11).
+ *
+ * خيار publicKeyBase64 ثغرة حقن ضيقة مقصودة للاختبارات فقط (زوج مفاتيح عابر)،
+ * ولا تستعمله أي شفرة إنتاج — الإنتاج يختزل دائمًا للمفتاح المضمَّن.
  */
 import { createPublicKey, verify } from 'node:crypto'
 import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { EMBEDDED_PUBLIC_KEY_SPKI_BASE64 } from './license-public-key'
+import { getDeviceFingerprint } from './device-fingerprint'
 import type { LicenseInfo, LicensePlan, LicenseStatus } from '../shared/types'
 
 export const LICENSE_KEY_PREFIX = 'RAFD1'
+
+/** نافذة «قارب على الانتهاء» بالأيام قبل expires_at (§8.3) */
+export const EXPIRING_SOON_DAYS = 7
+const DAY_MS = 24 * 60 * 60 * 1000
 
 interface LicensePayload {
   v: 1
@@ -27,11 +39,32 @@ interface LicensePayload {
   device_binding?: string | null
 }
 
-export type VerifyResult = { ok: true; info: LicenseInfo } | { ok: false; error: string }
+export interface VerifyOptions {
+  /** لحظة التقييم (حقن زمن صريح للاختبارات) */
+  now?: Date
+  /** تجاوز المفتاح العام المضمَّن — للاختبارات فقط، لا يُمرَّر من شفرة إنتاج */
+  publicKeyBase64?: string
+  /** حلّال بصمة الجهاز — يُستدعى كسولًا فقط لو كانت الحمولة مربوطة بجهاز */
+  resolveFingerprint?: () => string
+}
+
+export type VerifySuccess = {
+  ok: true
+  info: LicenseInfo
+  /** انتهى — يبقى نجاح تحقق ليفتح التطبيق للقراءة؛ قفل الكتابة عبر البوابة */
+  expired: boolean
+  /** ضمن نافذة EXPIRING_SOON_DAYS قبل الانتهاء — تنبيه غير مانع */
+  expiring_soon: boolean
+  /** أيام صحيحة موجبة متبقية، أو سالبة بعدد أيام الانتهاء المنقضية */
+  days_left: number
+}
+
+export type VerifyResult = VerifySuccess | { ok: false; error: string }
 
 const VALID_PLANS: readonly string[] = ['trial', 'starter', 'pro']
 
-export function verifyLicenseKey(key: string, now: Date = new Date()): VerifyResult {
+export function verifyLicenseKey(key: string, options: VerifyOptions = {}): VerifyResult {
+  const now = options.now ?? new Date()
   const trimmed = key.trim()
   const parts = trimmed.split('.')
   if (parts.length !== 3 || parts[0] !== LICENSE_KEY_PREFIX) {
@@ -54,7 +87,7 @@ export function verifyLicenseKey(key: string, now: Date = new Date()): VerifyRes
 
   // التحقق التشفيري أولًا: لا نثق بمحتوى الحمولة قبل إثبات التوقيع
   const publicKey = createPublicKey({
-    key: Buffer.from(EMBEDDED_PUBLIC_KEY_SPKI_BASE64, 'base64'),
+    key: Buffer.from(options.publicKeyBase64 ?? EMBEDDED_PUBLIC_KEY_SPKI_BASE64, 'base64'),
     format: 'der',
     type: 'spki'
   })
@@ -87,10 +120,31 @@ export function verifyLicenseKey(key: string, now: Date = new Date()): VerifyRes
   if (Number.isNaN(expiresAt)) {
     return { ok: false, error: 'تاريخ انتهاء الترخيص غير صالح' }
   }
-  if (expiresAt <= now.getTime()) {
-    // المرحلة 0: المنتهي = غير صالح. المرحلة 3 تطبّق نمط «قفل الكتابة فقط» (§8.3)
-    return { ok: false, error: 'انتهت صلاحية هذا الترخيص — تواصل مع الإدارة للتجديد' }
+
+  // بصمة الجهاز (§8.2): وجود device_binding يعني ترخيصًا مربوطًا — طابِق أو ارفض.
+  // غياب الحقل = ترخيص غير مربوط بجهاز، فلا فحص إطلاقًا (ولا استدعاء بصمة).
+  const binding = payload.device_binding?.trim()
+  if (binding) {
+    let current: string | null = null
+    try {
+      current = options.resolveFingerprint
+        ? options.resolveFingerprint()
+        : getDeviceFingerprint()
+    } catch {
+      current = null
+    }
+    if (!current) {
+      return { ok: false, error: 'تعذّرت قراءة بصمة هذا الجهاز لمطابقة الترخيص المربوط' }
+    }
+    if (current !== binding) {
+      return { ok: false, error: 'هذا الترخيص مربوط بجهاز آخر — تواصل مع الإدارة لإعادة الربط' }
+    }
   }
+
+  // دورة الحياة (§8.3): الانتهاء لم يعد فشل تحقق — يُحسب أعلامًا تُفسَّر في البوابة والواجهة
+  const msLeft = expiresAt - now.getTime()
+  const expired = msLeft < 0
+  const daysLeft = Math.ceil(msLeft / DAY_MS)
 
   const info: LicenseInfo = {
     license_id: payload.license_id,
@@ -99,7 +153,13 @@ export function verifyLicenseKey(key: string, now: Date = new Date()): VerifyRes
     issued_at: payload.issued_at,
     expires_at: payload.expires_at
   }
-  return { ok: true, info }
+  return {
+    ok: true,
+    info,
+    expired,
+    expiring_soon: !expired && msLeft <= EXPIRING_SOON_DAYS * DAY_MS,
+    days_left: daysLeft
+  }
 }
 
 /** ملف حفظ مفتاح التفعيل داخل userData (يُعاد التحقق منه توقيعيًا عند كل تشغيل — §11) */
@@ -116,17 +176,21 @@ export function saveActivatedLicense(userDataDir: string, key: string, info: Lic
   )
 }
 
-export function loadLicenseStatus(userDataDir: string, now: Date = new Date()): LicenseStatus {
+export type LoadOptions = VerifyOptions
+
+export function loadLicenseStatus(userDataDir: string, options: LoadOptions = {}): LicenseStatus {
   const file = licenseFilePath(userDataDir)
   if (!existsSync(file)) return { activated: false, reason: 'لا يوجد ترخيص مُفعَّل' }
   try {
     const raw = JSON.parse(readFileSync(file, 'utf8')) as { key?: string }
     if (!raw.key) return { activated: false, reason: 'ملف الترخيص تالف' }
-    const result = verifyLicenseKey(raw.key, now)
+    const result = verifyLicenseKey(raw.key, options)
     if (!result.ok) {
+      // مفتاح مخزَّن غير صالح/تالف/معدَّل/مربوط بجهاز آخر = منع دخول كامل (§8.3)
       return { activated: false, reason: result.error }
     }
-    return { activated: true, info: result.info }
+    const { info, expired, expiring_soon, days_left } = result
+    return { activated: true, info, expired, expiring_soon, days_left }
   } catch {
     return { activated: false, reason: 'تعذّرت قراءة ملف الترخيص' }
   }
