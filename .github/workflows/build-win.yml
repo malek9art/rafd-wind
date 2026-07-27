@@ -44,8 +44,13 @@ jobs:
         run: npm run build
         shell: pwsh
 
-      - name: Generate fresh test license (مفتاح تجريبي جديد لكل تشغيل)
+      # المرحلة 3: لا يوجد مفتاح خاص في المستودع. التوقيع يكون بالمفتاح الإنتاجي
+      # المخزَّن كسِرّ GitHub (RAFD_SIGNING_KEY_PEM) — يضبطه المشرف من مدير أسرار
+      # الإدارة. غيابه يفشل هذه الخطوة برسالة عربية صريحة من sign-license.mjs.
+      - name: Generate fresh test license (يوقَّع بمفتاح الإدارة من Secret، مفتاح جديد لكل تشغيل)
         id: license
+        env:
+          RAFD_SIGNING_KEY_PEM: ${{ secrets.RAFD_SIGNING_KEY_PEM }}
         run: |
           $out = node tools/keygen/sign-license.mjs --customer "CI Test Store"
           $license = ($out | Where-Object { $_ -notmatch '^#' }).Trim()
