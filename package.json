@@ -1,5 +1,6 @@
 {
   "name": "rafd-wind",
+  "productName": "RAFD",
   "version": "0.1.0",
   "description": "رفد Desktop — نظام نقاط بيع ومحاسبة يعمل بدون إنترنت 100% (Windows/Electron)",
   "main": "out/main/index.js",
