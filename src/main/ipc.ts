@@ -43,6 +43,7 @@ import * as sales from './repos/sales'
 import * as users from './repos/users'
 import * as auditLogs from './repos/auditLogs'
 import * as storeSettings from './repos/storeSettings'
+import * as reports from './repos/reports'
 import {
   createExpense,
   deleteExpense,
@@ -62,7 +63,7 @@ import {
   saveActivatedLicense,
   verifyLicenseKey
 } from './license'
-import type { ActivateResult, LicenseStatus } from '../shared/types'
+import type { ActivateResult, LicenseStatus, PnlReport } from '../shared/types'
 import { assertLicenseWritable } from './license-gate'
 import { WRITE_CHANNELS } from './ipc-write-channels'
 import { getDeviceFingerprint } from './device-fingerprint'
@@ -301,5 +302,10 @@ export function registerIpc(db: Db, userDataDir: string): void {
       console.error('Failed to save file via native dialog:', err)
       return false
     }
+  })
+
+  on(IPC.reportsGet, (_e, startDate: string, endDate: string): PnlReport => {
+    console.log(`reportsGet requested for range: ${startDate} to ${endDate}`)
+    return reports.getPnlReport(db, startDate, endDate)
   })
 }

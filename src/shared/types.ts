@@ -416,6 +416,19 @@ export type ActivateResult =
   | { ok: true; info: LicenseInfo; expired: boolean; expiring_soon: boolean }
   | { ok: false; error: string }
 
+export interface PnlReport {
+  startDate: string
+  endDate: string
+  totalRevenue: number
+  totalCogs: number
+  totalExpenses: number
+  totalPurchases: number
+  grossProfit: number
+  netProfit: number
+  dailyRevenue: Array<{ date: string; amount: number }>
+  expensesByCategory: Array<{ category: string; amount: number }>
+}
+
 /* ------------------------------ عقد IPC الكامل (§7) ------------------------------ */
 
 /** واجهة الـAPI المعروضة للواجهة عبر contextBridge — المرحلة 2 */
@@ -510,6 +523,9 @@ export interface RafdLocalApi {
   files: {
     saveText(filename: string, content: string): Promise<boolean>
   }
+  reports: {
+    getPnl(startDate: string, endDate: string): Promise<PnlReport>
+  }
 }
 
 export const IPC = {
@@ -568,5 +584,6 @@ export const IPC = {
   storeSettingsUpdate: 'storeSettings:update',
   printerPrintRaw: 'printer:print-raw',
   printerPrintHtml: 'printer:print-html',
-  filesSaveText: 'files:save-text'
+  filesSaveText: 'files:save-text',
+  reportsGet: 'reports:get'
 } as const

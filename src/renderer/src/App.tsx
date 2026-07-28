@@ -6,11 +6,12 @@ import InventoryScreen from './screens/InventoryScreen'
 import SuppliersScreen from './screens/SuppliersScreen'
 import PurchasesScreen from './screens/PurchasesScreen'
 import CustomersScreen from './screens/CustomersScreen'
+import ReportsScreen from './screens/ReportsScreen'
 import PosScreen from './screens/PosScreen'
 import ReceiptScreen from './screens/ReceiptScreen'
 
 type Phase = 'loading' | 'activation' | 'app'
-type View = { tab: 'pos' | 'products' | 'inventory' | 'suppliers' | 'purchases' | 'customers'; receipt: SaleWithItems | null }
+type View = { tab: 'pos' | 'products' | 'inventory' | 'suppliers' | 'purchases' | 'customers' | 'reports'; receipt: SaleWithItems | null }
 
 export function unwrapIpcError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error)
@@ -102,6 +103,12 @@ export default function App() {
             >
               العملاء
             </button>
+            <button
+              className={`btn px-4 py-1.5 text-sm ${view.tab === 'reports' ? 'bg-white/15' : 'bg-transparent'}`}
+              onClick={() => setView({ tab: 'reports', receipt: null })}
+            >
+              تقارير النشاط
+            </button>
           </nav>
         </div>
         {licenseInfo && (
@@ -127,6 +134,8 @@ export default function App() {
           <PurchasesScreen />
         ) : view.tab === 'customers' ? (
           <CustomersScreen />
+        ) : view.tab === 'reports' ? (
+          <ReportsScreen />
         ) : (
           <PosScreen onSaleCompleted={onSaleCompleted} />
         )}

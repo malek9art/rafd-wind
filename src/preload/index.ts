@@ -120,6 +120,9 @@ const api: RafdLocalApi = {
   },
   files: {
     saveText: (filename: string, content: string) => ipcRenderer.invoke(IPC.filesSaveText, filename, content)
+  },
+  reports: {
+    getPnl: (startDate: string, endDate: string) => ipcRenderer.invoke(IPC.reportsGet, startDate, endDate)
   }
 }
 
