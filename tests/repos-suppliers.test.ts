@@ -78,3 +78,32 @@ describe('supplierLedger — purchase_credit بدل sale_credit', () => {
     expect(listLedgerBySupplier(db, s.id)).toHaveLength(1)
   })
 })
+
+describe('حماية المورد من الحذف إذا كان مرتبطاً بحركات', () => {
+  it('يمنع حذف مورد مرتبط بقيد دفتر حساب مالي ويرمي خطأ صريحاً', () => {
+    const s = createSupplier(db, { name: 'مورد مرتبط بدفتر' })
+    addSupplierLedgerEntry(db, { supplier_id: s.id, amount: 200, type: 'purchase_credit' })
+
+    expect(() => deleteSupplier(db, s.id)).toThrow('لا يمكن حذف المورد لوجود قيود دفتر حساب مالي مرتبطة به')
+    expect(listSuppliers(db)).toHaveLength(1)
+  })
+
+  it('يمنع حذف مورد مرتبط بفواتير مشتريات ويرمي خطأ صريحاً', () => {
+    const s = createSupplier(db, { name: 'مورد مرتبط بفواتير مشتريات' })
+    
+    // ندرج فاتورة شراء مرتبطة بالمورد بقاعدة البيانات مباشرة لمحاكاة الارتباط
+    db.prepare(`INSERT INTO purchases (supplier_id, supplier_name, reference, total, paid, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+      s.id, s.name, 'PO-TEST-01', 1000, 1000, 'received', '2026-07-28T00:00:00.000Z'
+    )
+
+    expect(() => deleteSupplier(db, s.id)).toThrow('لا يمكن حذف المورد لوجود فواتير مشتريات مرتبطة به')
+    expect(listSuppliers(db)).toHaveLength(1)
+  })
+
+  it('يسمح بحذف مورد غير مرتبط بأي شيء بشكل طبيعي', () => {
+    const s = createSupplier(db, { name: 'مورد معزول' })
+    expect(listSuppliers(db)).toHaveLength(1)
+    deleteSupplier(db, s.id)
+    expect(listSuppliers(db)).toHaveLength(0)
+  })
+})

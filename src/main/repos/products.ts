@@ -121,3 +121,78 @@ export function deleteProduct(db: Db, id: number): void {
   getProduct(db, id)
   db.prepare('UPDATE products SET is_active = 0 WHERE id = ?').run(id)
 }
+
+/** حساب إعادة التخزين والكمية والتكلفة المرجحة */
+export function calculateRestock(
+  currentStock: number,
+  currentCost: number,
+  cartons: number,
+  cartonCost: number,
+  unitsPerCarton: number
+): { addedQty: number; newStock: number; newCost: number } {
+  const addedQty = cartons * unitsPerCarton
+  const newStock = Math.max(0, currentStock + addedQty)
+  const newUnitCost = unitsPerCarton > 0 ? cartonCost / unitsPerCarton : 0
+
+  let newCost = currentCost
+  if (newStock > 0) {
+    const totalCurrentCost = Math.max(0, currentStock) * currentCost
+    const totalNewCost = addedQty * newUnitCost
+    newCost = Math.round(((totalCurrentCost + totalNewCost) / newStock) * 100) / 100
+  }
+  return { addedQty, newStock, newCost }
+}
+
+/** إعادة تخزين سريعة بالكرتون */
+export function restockProduct(
+  db: Db,
+  productId: number,
+  cartons: number,
+  cartonCost: number,
+  unitsPerCarton: number
+): Product {
+  const product = getProduct(db, productId)
+
+  if (!Number.isInteger(cartons) || cartons <= 0) {
+    throw new Error('عدد الكراتين الموردة يجب أن يكون عددًا صحيحًا أكبر من صفر')
+  }
+  if (typeof cartonCost !== 'number' || isNaN(cartonCost) || cartonCost < 0) {
+    throw new Error('تكلفة الكرتون المورد يجب أن تكون صفرًا أو أكثر')
+  }
+  if (typeof unitsPerCarton !== 'number' || isNaN(unitsPerCarton) || unitsPerCarton <= 0) {
+    throw new Error('عدد الوحدات في الكرتون يجب أن يكون أكبر من صفر')
+  }
+
+  const { newStock, newCost } = calculateRestock(
+    product.stock,
+    product.cost,
+    cartons,
+    cartonCost,
+    unitsPerCarton
+  )
+
+  // تحديث أو إدراج في جدول التغليف product_packaging
+  db.prepare(`
+    INSERT INTO product_packaging (product_id, units_per_carton, carton_cost, unit_cost, created_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(product_id) DO UPDATE SET
+      units_per_carton = excluded.units_per_carton,
+      carton_cost = excluded.carton_cost,
+      unit_cost = excluded.unit_cost
+  `).run(
+    productId,
+    unitsPerCarton,
+    cartonCost,
+    unitsPerCarton > 0 ? cartonCost / unitsPerCarton : 0,
+    nowIso()
+  )
+
+  // تحديث المخزون والتكلفة في جدول المنتجات
+  db.prepare('UPDATE products SET stock = ?, cost = ? WHERE id = ?').run(
+    newStock,
+    newCost,
+    productId
+  )
+
+  return getProduct(db, productId)
+}

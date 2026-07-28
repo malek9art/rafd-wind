@@ -34,7 +34,16 @@ export interface ActorRef {
 export const CASHIER_DISCOUNT_CAP = 0.1
 
 const SALE_COLS = 'id, invoice_number, total, paid, bank_account_id, customer_id, created_at'
-const ITEM_COLS = 'id, sale_id, product_id, product_name, quantity, unit_price, total'
+const ITEM_COLS = 'id, sale_id, product_id, product_name, quantity, unit_price, total, weight_g, sold_by_weight'
+
+export function saleItemStockDelta(item: { quantity?: number; weight_g?: number | null; sold_by_weight?: boolean | number }): number {
+  let dec = Number(item.quantity) || 0
+  const isSoldByWeight = item.sold_by_weight === true || item.sold_by_weight === 1
+  if ((isSoldByWeight || item.weight_g != null) && item.weight_g != null) {
+    dec = Number(item.weight_g) / 1000
+  }
+  return dec > 0 ? dec : 0
+}
 
 export function listSales(db: Db, filters?: { customer_id?: number }): Sale[] {
   if (filters?.customer_id != null) {
@@ -70,7 +79,7 @@ export function createSale(db: Db, input: NewSale, actor?: ActorRef): SaleWithIt
 
   const run = db.transaction((): SaleWithItems => {
     // المبالغ من القاعدة لا من الواجهة (§11)
-    const getProduct = db.prepare('SELECT id, name, name_ar, price, stock FROM products WHERE id = ?')
+    const getProduct = db.prepare('SELECT id, name, name_ar, price, stock, sell_by_weight FROM products WHERE id = ?')
     const decreaseStock = db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?')
 
     let subtotal = 0
@@ -80,24 +89,41 @@ export function createSale(db: Db, input: NewSale, actor?: ActorRef): SaleWithIt
       quantity: number
       unit_price: number
       total: number
+      weight_g: number | null
+      sold_by_weight: number
     }> = []
     for (const item of input.items) {
       if (!(item.quantity > 0)) throw new Error('الكمية يجب أن تكون أكبر من صفر')
       const product = getProduct.get(item.product_id) as
-        | { id: number; name: string; name_ar: string | null; price: number; stock: number }
+        | { id: number; name: string; name_ar: string | null; price: number; stock: number; sell_by_weight: number }
         | undefined
       if (!product) throw new Error(`منتج غير موجود: ${item.product_id}`)
-      if (product.stock < item.quantity) {
+
+      const isSoldByWeight = item.sold_by_weight !== undefined
+        ? (item.sold_by_weight === true || item.sold_by_weight === 1 ? 1 : 0)
+        : (product.sell_by_weight ? 1 : 0)
+
+      const weightG = item.weight_g !== undefined ? item.weight_g : null
+
+      const dec = saleItemStockDelta({
+        quantity: item.quantity,
+        weight_g: weightG,
+        sold_by_weight: !!isSoldByWeight
+      })
+
+      if (product.stock < dec) {
         throw new Error(`مخزون غير كافٍ للمنتج «${product.name}» (المتاح: ${product.stock})`)
       }
-      const lineTotal = roundMoney(product.price * item.quantity)
+      const lineTotal = roundMoney(product.price * (isSoldByWeight ? (weightG ?? 0) / 1000 : item.quantity))
       subtotal = roundMoney(subtotal + lineTotal)
       lines.push({
         product_id: product.id,
         product_name: product.name_ar || product.name,
         quantity: item.quantity,
         unit_price: product.price,
-        total: lineTotal
+        total: lineTotal,
+        weight_g: weightG,
+        sold_by_weight: isSoldByWeight
       })
     }
 
@@ -148,12 +174,26 @@ export function createSale(db: Db, input: NewSale, actor?: ActorRef): SaleWithIt
     const saleId = Number(result.lastInsertRowid)
 
     const insertItem = db.prepare(
-      `INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, total)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, total, weight_g, sold_by_weight)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
     for (const line of lines) {
-      decreaseStock.run(line.quantity, line.product_id)
-      insertItem.run(saleId, line.product_id, line.product_name, line.quantity, line.unit_price, line.total)
+      const dec = saleItemStockDelta({
+        quantity: line.quantity,
+        weight_g: line.weight_g,
+        sold_by_weight: !!line.sold_by_weight
+      })
+      decreaseStock.run(dec, line.product_id)
+      insertItem.run(
+        saleId,
+        line.product_id,
+        line.product_name,
+        line.quantity,
+        line.unit_price,
+        line.total,
+        line.weight_g,
+        line.sold_by_weight
+      )
     }
 
     // عميل: إجمالي المشتريات دائمًا + قيد آجل عند وجود متبقٍّ
@@ -234,7 +274,14 @@ export function deleteSale(db: Db, id: number, actor?: ActorRef): void {
     }
     const restore = db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?')
     for (const item of existing.items) {
-      if (item.product_id != null) restore.run(item.quantity, item.product_id)
+      if (item.product_id != null) {
+        const dec = saleItemStockDelta({
+          quantity: item.quantity,
+          weight_g: item.weight_g,
+          sold_by_weight: !!item.sold_by_weight
+        })
+        restore.run(dec, item.product_id)
+      }
     }
     db.prepare('DELETE FROM sales WHERE id = ?').run(id)
     writeAudit(db, {

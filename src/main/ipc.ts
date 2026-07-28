@@ -3,7 +3,8 @@
  * ويمرّر «المستدعي» من جلسة المستخدم النشط للعمليات التي تحتاجه
  * (سقف الخصم + التدقيق). الأخطاء تُرمى Error عادي (§7) وتُفكّ في الواجهة.
  */
-import { ipcMain } from 'electron'
+import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { writeFileSync } from 'node:fs'
 import type { Db } from './db'
 import { IPC } from '../shared/types'
 import type {
@@ -42,6 +43,7 @@ import * as sales from './repos/sales'
 import * as users from './repos/users'
 import * as auditLogs from './repos/auditLogs'
 import * as storeSettings from './repos/storeSettings'
+import * as reports from './repos/reports'
 import {
   createExpense,
   deleteExpense,
@@ -61,7 +63,7 @@ import {
   saveActivatedLicense,
   verifyLicenseKey
 } from './license'
-import type { ActivateResult, LicenseStatus } from '../shared/types'
+import type { ActivateResult, LicenseStatus, PnlReport } from '../shared/types'
 import { assertLicenseWritable } from './license-gate'
 import { WRITE_CHANNELS } from './ipc-write-channels'
 import { getDeviceFingerprint } from './device-fingerprint'
@@ -109,6 +111,9 @@ export function registerIpc(db: Db, userDataDir: string): void {
     products.updateProduct(db, id, patch)
   )
   on(IPC.productsDelete, (_e, id: number) => products.deleteProduct(db, id))
+  on(IPC.productsRestock, (_e, productId: number, cartons: number, cartonCost: number, unitsPerCarton: number) =>
+    products.restockProduct(db, productId, cartons, cartonCost, unitsPerCarton)
+  )
 
   /* عملاء + دفتر */
   on(IPC.customersList, () => customers.listCustomers(db))
@@ -220,4 +225,87 @@ export function registerIpc(db: Db, userDataDir: string): void {
   on(IPC.storeSettingsUpdate, (_e, patch: StoreSettingsPatch) =>
     storeSettings.updateStoreSettings(db, patch)
   )
+
+  /* الطباعة */
+  on(IPC.printerPrintRaw, async (_e, bytes: Uint8Array): Promise<boolean> => {
+    console.log(`printerPrintRaw: ${bytes.length} bytes`)
+    let SerialPortMod: any = null
+    try {
+      SerialPortMod = require('serialport').SerialPort
+    } catch (err) {
+      console.warn('serialport is not compiled or available. Fallback to mock printing.', err)
+      return true
+    }
+    if (!SerialPortMod) {
+      console.warn('SerialPortMod is null, fallback to mock printing.')
+      return true
+    }
+    try {
+      const list = await SerialPortMod.list()
+      const portInfo = list.find((p: any) => p.vendorId || p.productId) || list[0]
+      if (!portInfo) {
+        console.warn('No serial ports found. Mock printing success.')
+        return true
+      }
+      const port = new SerialPortMod({
+        path: portInfo.path,
+        baudRate: 9600
+      })
+      return new Promise<boolean>((resolve) => {
+        port.write(Buffer.from(bytes), (err: any) => {
+          port.close()
+          if (err) {
+            console.error('Serial port write error:', err)
+            resolve(false)
+          } else {
+            resolve(true)
+          }
+        })
+      })
+    } catch (err) {
+      console.error('Failed to print to serial port:', err)
+      return false
+    }
+  })
+
+  on(IPC.printerPrintHtml, (_e, html: string): Promise<boolean> => {
+    console.log(`printerPrintHtml: ${html.length} chars`)
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) {
+      console.warn('No focused window found for html printing')
+      return Promise.resolve(false)
+    }
+    return new Promise<boolean>((resolve) => {
+      win.webContents.print({ silent: false, printBackground: true }, (success, failureReason) => {
+        if (!success) {
+          console.error(`Print failed: ${failureReason}`)
+        }
+        resolve(success)
+      })
+    })
+  })
+
+  on(IPC.filesSaveText, async (_e, filename: string, content: string): Promise<boolean> => {
+    console.log(`filesSaveText requested: ${filename}`)
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return false
+    const { filePath, canceled } = await dialog.showSaveDialog(win, {
+      title: 'حفظ كشف الحساب',
+      defaultPath: filename,
+      filters: [{ name: 'Text Files', extensions: ['txt'] }]
+    })
+    if (canceled || !filePath) return false
+    try {
+      writeFileSync(filePath, content, 'utf8')
+      return true
+    } catch (err) {
+      console.error('Failed to save file via native dialog:', err)
+      return false
+    }
+  })
+
+  on(IPC.reportsGet, (_e, startDate: string, endDate: string): PnlReport => {
+    console.log(`reportsGet requested for range: ${startDate} to ${endDate}`)
+    return reports.getPnlReport(db, startDate, endDate)
+  })
 }

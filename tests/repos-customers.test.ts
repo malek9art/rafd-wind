@@ -100,3 +100,32 @@ describe('customerLedger — منطق الأرصدة', () => {
     expect(getCustomer(db, c.id).balance).toBe(0)
   })
 })
+
+describe('حماية العميل من الحذف إذا كان مرتبطاً بحركات', () => {
+  it('يمنع حذف عميل مرتبط بقيد دفتر حساب مالي ويرمي خطأ صريحاً', () => {
+    const c = createCustomer(db, { name: 'عميل مرتبط بدفتر' })
+    addLedgerEntry(db, { customer_id: c.id, amount: 100, type: 'sale_credit' })
+
+    expect(() => deleteCustomer(db, c.id)).toThrow('لا يمكن حذف العميل لوجود قيود دفتر حساب مالي مرتبطة به')
+    expect(listCustomers(db)).toHaveLength(1)
+  })
+
+  it('يمنع حذف عميل مرتبط بفواتير مبيعات ويرمي خطأ صريحاً', () => {
+    const c = createCustomer(db, { name: 'عميل مرتبط بفواتير' })
+    
+    // ندرج فاتورة مرتبطة بالعميل بقاعدة البيانات مباشرة لمحاكاة الارتباط
+    db.prepare(`INSERT INTO sales (invoice_number, total, paid, created_at, customer_id) VALUES (?, ?, ?, ?, ?)`).run(
+      'INV-TEST-01', 500, 500, '2026-07-28T00:00:00.000Z', c.id
+    )
+
+    expect(() => deleteCustomer(db, c.id)).toThrow('لا يمكن حذف العميل لوجود فواتير مبيعات مرتبطة به')
+    expect(listCustomers(db)).toHaveLength(1)
+  })
+
+  it('يسمح بحذف عميل غير مرتبط بأي شيء بشكل طبيعي', () => {
+    const c = createCustomer(db, { name: 'عميل معزول' })
+    expect(listCustomers(db)).toHaveLength(1)
+    deleteCustomer(db, c.id)
+    expect(listCustomers(db)).toHaveLength(0)
+  })
+})

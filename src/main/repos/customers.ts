@@ -46,10 +46,26 @@ export function updateCustomer(db: Db, id: number, patch: CustomerPatch): Custom
   return getCustomer(db, id)
 }
 
-/** حذف صلب — قيود الدفتر تتبعه CASCADE بقرار مخطط المرحلة 1 */
+/** حذف صلب — حماية من الحذف إذا كان مرتبطاً بحركات مالية أو فواتير مبيعات تاريخية (تصحيح حرج للدفعة 3 و 4) */
 export function deleteCustomer(db: Db, id: number): void {
   getCustomer(db, id)
   const run = db.transaction(() => {
+    // التحقق من وجود حركات قيود في الدفتر المالي للعميل
+    const ledgerCount = (
+      db.prepare('SELECT COUNT(*) AS c FROM customer_ledger WHERE customer_id = ?').get(id) as { c: number }
+    ).c
+    if (ledgerCount > 0) {
+      throw new Error('لا يمكن حذف العميل لوجود قيود دفتر حساب مالي مرتبطة به')
+    }
+
+    // التحقق من وجود فواتير مبيعات للعميل
+    const salesCount = (
+      db.prepare('SELECT COUNT(*) AS c FROM sales WHERE customer_id = ?').get(id) as { c: number }
+    ).c
+    if (salesCount > 0) {
+      throw new Error('لا يمكن حذف العميل لوجود فواتير مبيعات مرتبطة به')
+    }
+
     db.prepare('DELETE FROM customers WHERE id = ?').run(id)
   })
   run()

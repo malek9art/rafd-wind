@@ -40,7 +40,9 @@ const api: RafdLocalApi = {
     list: (filters) => ipcRenderer.invoke(IPC.productsList, filters),
     create: (payload: NewProduct) => ipcRenderer.invoke(IPC.productsCreate, payload),
     update: (id: number, patch: ProductPatch) => ipcRenderer.invoke(IPC.productsUpdate, id, patch),
-    delete: (id: number) => ipcRenderer.invoke(IPC.productsDelete, id)
+    delete: (id: number) => ipcRenderer.invoke(IPC.productsDelete, id),
+    restock: (productId: number, cartons: number, cartonCost: number, unitsPerCarton: number) =>
+      ipcRenderer.invoke(IPC.productsRestock, productId, cartons, cartonCost, unitsPerCarton)
   },
   customers: {
     list: () => ipcRenderer.invoke(IPC.customersList),
@@ -111,6 +113,16 @@ const api: RafdLocalApi = {
   storeSettings: {
     get: () => ipcRenderer.invoke(IPC.storeSettingsGet),
     update: (patch: StoreSettingsPatch) => ipcRenderer.invoke(IPC.storeSettingsUpdate, patch)
+  },
+  printer: {
+    printRaw: (bytes: Uint8Array) => ipcRenderer.invoke(IPC.printerPrintRaw, bytes),
+    printHtml: (html: string) => ipcRenderer.invoke(IPC.printerPrintHtml, html)
+  },
+  files: {
+    saveText: (filename: string, content: string) => ipcRenderer.invoke(IPC.filesSaveText, filename, content)
+  },
+  reports: {
+    getPnl: (startDate: string, endDate: string) => ipcRenderer.invoke(IPC.reportsGet, startDate, endDate)
   }
 }
 

@@ -261,3 +261,106 @@ describe('التدقيق وترشيح القوائم', () => {
     expect(getPurchaseWithItems(db, 1).purchase.reference).toBe('PO-000001')
   })
 })
+
+describe('تصحيحات الدفعة 3 - الموردون والمشتريات الحركية والتحقق', () => {
+  it('الاستلام الفوري من خلال status="received" يؤثر فورياً على مخزون وتكلفة السلعة وقيد الدفتر للمورد', () => {
+    const productId = seedProduct(0, 50) // مخزون 0، تكلفة 50
+    const supplier = createSupplier(db, { name: 'الشركة اليمنية للأغذية' })
+
+    const { purchase } = createPurchase(db, {
+      supplier_id: supplier.id,
+      status: 'received',
+      paid: 0, // لم يدفع شيء (سعر الفاتورة آجل كامل)
+      items: [
+        {
+          product_id: productId,
+          product_name: 'زبادي الكبوس',
+          quantity: 100,
+          unit_cost: 15,
+          units_per_carton: 20,
+          cartons: 5
+        }
+      ]
+    })
+
+    // 1. المخزون زاد بـ 100
+    expect(getProduct(db, productId).stock).toBe(100)
+    // 2. التكلفة أصبحت 15
+    expect(getProduct(db, productId).cost).toBe(15)
+    // 3. رصيد المورد زاد بـ 1500 (100 حبة * 15 ريال)
+    expect(getSupplier(db, supplier.id).balance).toBe(1500)
+    // 4. كتابة قيد دفتر المورد بنجاح
+    const ledger = listLedgerBySupplier(db, supplier.id)
+    expect(ledger).toHaveLength(1)
+    expect(ledger[0].type).toBe('purchase_credit')
+    expect(ledger[0].amount).toBe(1500)
+    expect(ledger[0].purchase_id).toBe(purchase.id)
+  })
+
+  it('إنشاء أمر شراء معلق (مسودة) ثم استلامه جزئياً يعكس استلاماً حقيقياً في المخزن', () => {
+    const productId = seedProduct(10, 80) // مخزون 10، تكلفة 80
+    const supplier = createSupplier(db, { name: 'مورد حليب' })
+
+    // إنشاء كمسودة (status = 'pending')
+    const { purchase, items } = createPurchase(db, {
+      supplier_id: supplier.id,
+      status: 'pending',
+      paid: 0,
+      items: [
+        {
+          product_id: productId,
+          product_name: 'حليب هائل كرتون',
+          quantity: 50,
+          unit_cost: 10,
+          units_per_carton: 10,
+          cartons: 5
+        }
+      ]
+    })
+
+    // المخزون لم يتغير لأنها مسودة معلقة
+    expect(getProduct(db, productId).stock).toBe(10)
+
+    // استلام جزئي لاحق: الكاشير استلم 30 حبة فقط بدلاً من 50
+    const updatedItems = [
+      {
+        ...items[0],
+        received_quantity: 30 // استلم 30 فقط
+      }
+    ]
+
+    updatePurchase(db, purchase.id, {
+      receive: true,
+      items: updatedItems
+    })
+
+    // المخزون زاد بـ 30 فقط (المجموع: 10 + 30 = 40) وليس بـ 50
+    expect(getProduct(db, productId).stock).toBe(40)
+  })
+
+  it('سلوك حقل الدفع الفارغ في الواجهة (الافتراض هو صفر مدفوع وليس دفعاً كاملاً صامتاً)', () => {
+    const supplier = createSupplier(db, { name: 'المتجر المتميز' })
+    const productId = seedProduct(0, 100)
+
+    // محاكاة إرسال حقل مدفوع فارغ (undefined/null أو عدم تمريره يعني افتراضياً صفر مدفوع)
+    const { purchase } = createPurchase(db, {
+      supplier_id: supplier.id,
+      status: 'received',
+      paid: undefined, // غير مدفوع (فارغ)
+      items: [
+        {
+          product_id: productId,
+          product_name: 'بسكويت ريكو',
+          quantity: 10,
+          unit_cost: 10
+        }
+      ]
+    })
+
+    // المدفوع يجب أن يكون صفر
+    expect(purchase.paid).toBe(0)
+    // كامل الفاتورة (10 * 10 = 100) تسجل كدين آجل على المتجر للمورد
+    expect(purchase.total).toBe(100)
+    expect(getSupplier(db, supplier.id).balance).toBe(100)
+  })
+})

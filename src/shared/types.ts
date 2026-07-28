@@ -69,12 +69,16 @@ export interface SaleItem {
   quantity: number
   unit_price: number
   total: number
+  weight_g: number | null
+  sold_by_weight: number
 }
 
 /** عنصر داخل "سلة" البيع قبل الإتمام */
 export interface SaleItemInput {
   product_id: number
   quantity: number
+  weight_g?: number | null
+  sold_by_weight?: number | boolean
 }
 
 export interface NewSale {
@@ -412,6 +416,19 @@ export type ActivateResult =
   | { ok: true; info: LicenseInfo; expired: boolean; expiring_soon: boolean }
   | { ok: false; error: string }
 
+export interface PnlReport {
+  startDate: string
+  endDate: string
+  totalRevenue: number
+  totalCogs: number
+  totalExpenses: number
+  totalPurchases: number
+  grossProfit: number
+  netProfit: number
+  dailyRevenue: Array<{ date: string; amount: number }>
+  expensesByCategory: Array<{ category: string; amount: number }>
+}
+
 /* ------------------------------ عقد IPC الكامل (§7) ------------------------------ */
 
 /** واجهة الـAPI المعروضة للواجهة عبر contextBridge — المرحلة 2 */
@@ -427,6 +444,7 @@ export interface RafdLocalApi {
     create(payload: NewProduct): Promise<Product>
     update(id: number, patch: ProductPatch): Promise<Product>
     delete(id: number): Promise<void>
+    restock(productId: number, cartons: number, cartonCost: number, unitsPerCarton: number): Promise<Product>
   }
   customers: {
     list(): Promise<Customer[]>
@@ -498,6 +516,16 @@ export interface RafdLocalApi {
     get(): Promise<StoreSettings | null>
     update(patch: StoreSettingsPatch): Promise<StoreSettings>
   }
+  printer: {
+    printRaw(bytes: Uint8Array): Promise<boolean>
+    printHtml(html: string): Promise<boolean>
+  }
+  files: {
+    saveText(filename: string, content: string): Promise<boolean>
+  }
+  reports: {
+    getPnl(startDate: string, endDate: string): Promise<PnlReport>
+  }
 }
 
 export const IPC = {
@@ -508,6 +536,7 @@ export const IPC = {
   productsCreate: 'products:create',
   productsUpdate: 'products:update',
   productsDelete: 'products:delete',
+  productsRestock: 'products:restock',
   customersList: 'customers:list',
   customersCreate: 'customers:create',
   customersUpdate: 'customers:update',
@@ -552,5 +581,9 @@ export const IPC = {
   usersLogout: 'users:logout',
   auditLogsList: 'auditLogs:list',
   storeSettingsGet: 'storeSettings:get',
-  storeSettingsUpdate: 'storeSettings:update'
+  storeSettingsUpdate: 'storeSettings:update',
+  printerPrintRaw: 'printer:print-raw',
+  printerPrintHtml: 'printer:print-html',
+  filesSaveText: 'files:save-text',
+  reportsGet: 'reports:get'
 } as const
