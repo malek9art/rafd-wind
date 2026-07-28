@@ -143,8 +143,8 @@ export default function PurchasesScreen() {
         supplier_name: sup ? sup.name : 'مورد مجهول',
         reference: orderReference.trim() || null,
         purchase_date: new Date().toISOString(),
-        paid: amountPaid === '' ? orderSubtotal : Number(amountPaid),
-        status: markAsReceived ? 'completed' : 'pending',
+        paid: amountPaid === '' ? 0 : Number(amountPaid),
+        status: markAsReceived ? 'received' : 'pending',
         items: orderLines.map((l) => ({
           product_id: l.product_id,
           product_name: l.product_name,
@@ -256,7 +256,7 @@ export default function PurchasesScreen() {
           </tr>
           <tr>
             <td><strong>المورد:</strong> ${purchase.supplier_name}</td>
-            <td style="text-align: left;"><strong>الحالة:</strong> ${purchase.status === 'completed' ? 'مستلم بالكامل' : 'مسودة / قيد الاستلام'}</td>
+            <td style="text-align: left;"><strong>الحالة:</strong> ${purchase.status === 'received' ? 'مستلم بالكامل' : 'مسودة / قيد الاستلام'}</td>
           </tr>
         </table>
         <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px;">
@@ -344,7 +344,7 @@ export default function PurchasesScreen() {
             onChange={(e) => setFilterStatus(e.target.value)}
           >
             <option value="الكل">جميع الحالات</option>
-            <option value="completed">مستلم بالكامل</option>
+            <option value="received">مستلم بالكامل</option>
             <option value="pending">مسودة / معلق</option>
           </select>
         </div>
@@ -405,7 +405,7 @@ export default function PurchasesScreen() {
                       {p.paid.toLocaleString()} YER
                     </td>
                     <td className="py-2.5">
-                      {p.status === 'completed' ? (
+                      {p.status === 'received' ? (
                         <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold">
                           مستلم بالكامل
                         </span>
@@ -620,21 +620,25 @@ export default function PurchasesScreen() {
                 </div>
 
                 <div>
-                  <label className="label">المبلغ المدفوع نقدًا للمورد (اتركه فارغاً = مدفوع بالكامل)</label>
+                  <label className="label">المبلغ المدفوع نقدًا للمورد (اتركه فارغاً = صفر مدفوع، الباقي آجل)</label>
                   <input
                     type="number"
                     className="input font-bold"
-                    placeholder={String(orderSubtotal)}
+                    placeholder="0"
                     dir="ltr"
                     min="0"
                     value={amountPaid}
                     onChange={(e) => setAmountPaid(e.target.value)}
                   />
-                  {amountPaid !== '' && Number(amountPaid) < orderSubtotal && (
+                  {amountPaid === '' ? (
+                    <div className="text-[10px] text-amber-700 font-bold mt-1">
+                      ⚠️ حقل المدفوع فارغ: سيتم تسجيل كامل قيمة الفاتورة ({orderSubtotal.toLocaleString()} YER) كدين آجل للمورد في دفتر الحساب.
+                    </div>
+                  ) : Number(amountPaid) < orderSubtotal ? (
                     <div className="text-[10px] text-red-700 font-bold mt-1">
                       ⚠️ المتبقي ({(orderSubtotal - Number(amountPaid)).toLocaleString()} YER) سيسجل كدين آجل للمورد في الدفتر.
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
                 <div className="flex items-center gap-2 bg-[var(--bg)] p-2 rounded-xl border border-[var(--color-ink-150)]">
@@ -713,7 +717,7 @@ export default function PurchasesScreen() {
                 <div>
                   <span className="text-gray-600 text-[10px]">الحالة:</span>
                   <div className="text-xs">
-                    {activePurchase.purchase.status === 'completed' ? (
+                    {activePurchase.purchase.status === 'received' ? (
                       <span className="text-green-700">✔️ تم الاستلام والمطابقة</span>
                     ) : (
                       <span className="text-amber-700">⏳ مسودة بانتظار الاستلام الفعلي</span>
@@ -744,7 +748,7 @@ export default function PurchasesScreen() {
                           <td className="py-2 text-center">{item.cartons}</td>
                           <td className="py-2 text-center font-mono font-bold">{item.quantity}</td>
                           <td className="py-2 text-center font-bold">
-                            {activePurchase.purchase.status === 'completed' ? (
+                            {activePurchase.purchase.status === 'received' ? (
                               <span className="text-green-700 font-mono">{item.received_quantity}</span>
                             ) : (
                               /* Editable input for real partial receipt! */
@@ -805,7 +809,7 @@ export default function PurchasesScreen() {
                   إغلاق
                 </button>
 
-                {activePurchase.purchase.status !== 'completed' && (
+                {activePurchase.purchase.status !== 'received' && (
                   <button
                     onClick={handleConfirmReceipt}
                     className="btn btn-primary px-5 py-2 font-bold"
