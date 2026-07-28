@@ -110,7 +110,7 @@ export default function SuppliersScreen() {
 
   // Delete/Disable Supplier
   async function handleDelete(id: number) {
-    if (window.confirm('هل أنت متأكد من حذف هذا المورد؟ لن تتمكن من حذفه إذا كان مرتبطاً بحركات مالية أو فواتير مشتريات.')) {
+    if (window.confirm('هل أنت متأكد من حذف هذا المورد؟ لا يمكن حذفه إذا كان مرتبطاً بحركات مالية أو فواتير مشتريات تاريخية.')) {
       setError(null)
       try {
         await window.rafdLocal.suppliers.delete(id)

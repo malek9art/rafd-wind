@@ -104,7 +104,7 @@ export default function CustomersScreen() {
 
   // Delete Customer
   async function handleDelete(id: number) {
-    if (window.confirm('هل أنت متأكد من حذف هذا العميل؟ سيؤدي ذلك لحذف قيود دفتره بالكامل.')) {
+    if (window.confirm('هل أنت متأكد من حذف هذا العميل؟ لا يمكن حذفه إذا كان مرتبطاً بحركات مالية أو فواتير مبيعات تاريخية.')) {
       setError(null)
       try {
         await window.rafdLocal.customers.delete(id)
@@ -243,10 +243,10 @@ export default function CustomersScreen() {
           </div>
 
           <div>
-            <label className="label">ملاحظات / سقف الدين</label>
+            <label className="label">ملاحظات العميل</label>
             <textarea
               className="input text-xs h-16 resize-none"
-              placeholder="سقف الدين 50,000 ريال"
+              placeholder="ملاحظات أو تفاصيل إضافية عن العميل"
               value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })}
             />

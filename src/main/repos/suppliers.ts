@@ -45,10 +45,26 @@ export function updateSupplier(db: Db, id: number, patch: SupplierPatch): Suppli
   return getSupplier(db, id)
 }
 
-/** حذف صلب — قيود الدفتر تتبعه CASCADE بقرار مخطط المرحلة 1 */
+/** حذف صلب — ولكن مع حماية من الحذف إذا كان مرتبطاً بحركات مالية أو فواتير مشتريات تاريخية */
 export function deleteSupplier(db: Db, id: number): void {
   getSupplier(db, id)
   const run = db.transaction(() => {
+    // التحقق من وجود حركات قيود في الدفتر المالي للمورد
+    const ledgerCount = (
+      db.prepare('SELECT COUNT(*) AS c FROM supplier_ledger WHERE supplier_id = ?').get(id) as { c: number }
+    ).c
+    if (ledgerCount > 0) {
+      throw new Error('لا يمكن حذف المورد لوجود قيود دفتر حساب مالي مرتبطة به')
+    }
+
+    // التحقق من وجود فواتير مشتريات للمورد
+    const purchasesCount = (
+      db.prepare('SELECT COUNT(*) AS c FROM purchases WHERE supplier_id = ?').get(id) as { c: number }
+    ).c
+    if (purchasesCount > 0) {
+      throw new Error('لا يمكن حذف المورد لوجود فواتير مشتريات مرتبطة به')
+    }
+
     db.prepare('DELETE FROM suppliers WHERE id = ?').run(id)
   })
   run()
