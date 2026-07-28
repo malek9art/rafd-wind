@@ -46,7 +46,7 @@ export function updateCustomer(db: Db, id: number, patch: CustomerPatch): Custom
   return getCustomer(db, id)
 }
 
-/** حذف صلب — ولكن مع حماية من الحذف إذا كان مرتبطاً بحركات مالية أو فواتير مبيعات تاريخية */
+/** حذف صلب — حماية من الحذف إذا كان مرتبطاً بحركات مالية أو فواتير مبيعات تاريخية (تصحيح حرج للدفعة 3 و 4) */
 export function deleteCustomer(db: Db, id: number): void {
   getCustomer(db, id)
   const run = db.transaction(() => {

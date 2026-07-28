@@ -45,7 +45,7 @@ export function updateSupplier(db: Db, id: number, patch: SupplierPatch): Suppli
   return getSupplier(db, id)
 }
 
-/** حذف صلب — ولكن مع حماية من الحذف إذا كان مرتبطاً بحركات مالية أو فواتير مشتريات تاريخية */
+/** حذف صلب — حماية من الحذف إذا كان مرتبطاً بحركات مالية أو فواتير مشتريات تاريخية (تصحيح حرج للدفعة 3 و 4) */
 export function deleteSupplier(db: Db, id: number): void {
   getSupplier(db, id)
   const run = db.transaction(() => {
