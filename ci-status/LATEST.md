@@ -1,15 +1,15 @@
 # آخر نتيجة CI — windows-latest
 
-- run_id: 30306467300
+- run_id: 30317316422
 - run_attempt: 1
-- run_url: https://github.com/malek9art/rafd-wind/actions/runs/30306467300
-- commit: b06db8fb83b6a665ad38d42652069c550a74f242
+- run_url: https://github.com/malek9art/rafd-wind/actions/runs/30317316422
+- commit: be3a96b667b66f6a0004a993924402fd027c275e
 - job_status: success
-- finished_utc: 2026-07-27T21:24:47.8382636+00:00
+- finished_utc: 2026-07-28T00:30:30.8617759+00:00
 ## artifact
 file=RAFD-Setup-0.1.0.exe
-sha256=bd96281c96af722bd4a57984de6824e9ad8ed8f4eaf2209b820fe24f27af897c
-size_bytes=108968443
+sha256=3d147fa48250e38f537f5518a594fbb06003e440cebb5236440ae326d3c5aa7c
+size_bytes=109575839
 
 ## smoke write tail
 ```

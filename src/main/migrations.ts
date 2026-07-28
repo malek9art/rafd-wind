@@ -18,7 +18,7 @@ import { basename } from 'node:path'
 export type Db = Database.Database
 
 /** إصدار المخطط المتوقَّع في هذا الإصدار من التطبيق */
-export const SCHEMA_VERSION_CODE = 2
+export const SCHEMA_VERSION_CODE = 3
 
 export interface Migration {
   version: number
@@ -354,9 +354,22 @@ function up_v2(db: Db): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_sales_customer ON sales(customer_id)')
 }
 
+/**
+ * الترقية v3 — إضافة أعمدة الوزن لـ sale_items
+ */
+function up_v3(db: Db): void {
+  if (!hasColumn(db, 'sale_items', 'weight_g')) {
+    db.exec('ALTER TABLE sale_items ADD COLUMN weight_g REAL')
+  }
+  if (!hasColumn(db, 'sale_items', 'sold_by_weight')) {
+    db.exec('ALTER TABLE sale_items ADD COLUMN sold_by_weight INTEGER DEFAULT 0')
+  }
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'phase1-full-schema', up: up_v1 },
-  { version: 2, name: 'sales-customer-link', up: up_v2 }
+  { version: 2, name: 'sales-customer-link', up: up_v2 },
+  { version: 3, name: 'sale-items-weight', up: up_v3 }
 ]
 
 /* ------------------------------------------------------------------ */

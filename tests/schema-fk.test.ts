@@ -254,7 +254,7 @@ describe('اكتمال أعمدة §6 حرفيًا (حراسة ضد أخطاء �
     products: ['id','name','name_ar','price','cost','stock','unit','sku','barcode','category','min_stock','image_url','is_active','supplier_id','supplier_name','sell_by_weight','created_at'],
     product_packaging: ['id','product_id','units_per_carton','carton_cost','unit_cost','created_at'],
     sales: ['id','invoice_number','total','paid','bank_account_id','created_at','customer_id'],
-    sale_items: ['id','sale_id','product_id','product_name','quantity','unit_price','total'],
+    sale_items: ['id','sale_id','product_id','product_name','quantity','unit_price','total','weight_g','sold_by_weight'],
     customers: ['id','name','phone','email','balance','total_purchases','notes','created_at'],
     customer_ledger: ['id','customer_id','type','amount','balance_after','reference','notes','sale_id','created_at'],
     suppliers: ['id','name','phone','email','balance','notes','created_at'],

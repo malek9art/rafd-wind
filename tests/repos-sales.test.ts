@@ -323,3 +323,68 @@ describe('سجل التدقيق', () => {
     expect(deletes[0].user_id).toBe(deleter.id)
   })
 })
+
+describe('مبيعات الميزان والوزن', () => {
+  it('يخصم المخزون بالوزن الفعلي (جرام / 1000) للسلع الموزونة ويحسب السعر الإجمالي بالوزن', () => {
+    // ننشئ منتجًا موزونًا (مثلاً جبنة) بمخزون 5 كجم وسعر 120 ريال للكجم
+    const pid = createProduct(db, {
+      name: 'جبنة رومي',
+      price: 120,
+      stock: 5,
+      sell_by_weight: 1
+    }).id
+
+    // نبيع 500 جرام (0.5 كجم)
+    const { sale, items } = createSale(
+      db,
+      {
+        items: [
+          {
+            product_id: pid,
+            quantity: 1, // الكمية الأساسية ممررة كـ 1
+            weight_g: 500,
+            sold_by_weight: 1
+          }
+        ],
+        paid: 60
+      },
+      MANAGER
+    )
+
+    expect(sale.total).toBe(60) // 120 * 0.5 = 60 ريال
+    expect(items[0].weight_g).toBe(500)
+    expect(items[0].sold_by_weight).toBe(1)
+    expect(items[0].total).toBe(60)
+
+    // يجب أن يكون المخزون المتبقي 4.5 كجم
+    expect(getProduct(db, pid).stock).toBe(4.5)
+  })
+
+  it('يرفض البيع بالوزن لو كان المخزون المتبقي غير كافٍ', () => {
+    const pid = createProduct(db, {
+      name: 'تفاح',
+      price: 10,
+      stock: 1.5,
+      sell_by_weight: 1
+    }).id
+
+    // نحاول بيع 2000 جرام (2 كجم) والمتاح 1.5 كجم
+    expect(() =>
+      createSale(
+        db,
+        {
+          items: [
+            {
+              product_id: pid,
+              quantity: 1,
+              weight_g: 2000,
+              sold_by_weight: 1
+            }
+          ],
+          paid: 20
+        },
+        MANAGER
+      )
+    ).toThrow('مخزون غير كافٍ')
+  })
+})

@@ -21,10 +21,10 @@ describe('تصنيف القنوات', () => {
     expect(WRITE_CHANNELS.size + FREE_CHANNELS.size).toBe(ALL.length)
   })
 
-  it('قنوات الكتابة هي بالضبط عمليات الإدراج/التعديل/الحذف (30 قناة)', () => {
-    expect(WRITE_CHANNELS.size).toBe(30)
+  it('قنوات الكتابة هي بالضبط عمليات الإدراج/التعديل/الحذف (31 قناة)', () => {
+    expect(WRITE_CHANNELS.size).toBe(31)
     const expected = [
-      'products:create', 'products:update', 'products:delete',
+      'products:create', 'products:update', 'products:delete', 'products:restock',
       'customers:create', 'customers:update', 'customers:delete',
       'customerLedger:addEntry',
       'suppliers:create', 'suppliers:update', 'suppliers:delete',
