@@ -31,6 +31,42 @@ export default function BackupScreen() {
   return (
     <div className="flex flex-col gap-6 p-5">
       <h2 className="text-xl font-extrabold text-[var(--text)]">النسخ الاحتياطي والاستعادة</h2>
+
+      <section className="card p-5 flex flex-col gap-3 border-t-4 border-[var(--accent)]">
+        <h3 className="font-bold text-[var(--text)]">☁️ النسخ السحابي عبر Supabase (`rafd-dev`)</h3>
+        <p className="text-xs text-[var(--text-muted)]">
+          جدول/Storage معزول تمامًا (`rafd_wind_cloud_backups`) — لا لمس أي جدول من `rafd-app`.
+          يتطلب إعداد بيئة `rafd-dev` فعليًا (URL + anon key + RLS مُنشَر) قبل التفعيل.
+        </p>
+        <button
+          onClick={async () => {
+            setBusy(true); setMessage('☁️ جاري رفع نسخة سحابية... (يتطلب إعداد rafd-dev فعليًا)')
+            try {
+              const result = await window.rafdLocal.cloudBackup.upload()
+              setMessage(result.ok ? '✅ تم رفع النسخة السحابية' : '❌ لم يُفعَّل بعد: ' + (result.error ?? ''))
+            } catch (e) { setMessage('❌ خطأ: ' + unwrapIpcError(e)) }
+            finally { setBusy(false) }
+          }}
+          disabled={busy}
+          className="btn btn-secondary self-start"
+        >
+          ☁️ رفع نسخة سحابية
+        </button>
+        <button
+          onClick={async () => {
+            setBusy(true); setMessage('☁️ جاري استعادة من السحابة...')
+            try {
+              const result = await window.rafdLocal.cloudBackup.download()
+              setMessage(result.ok ? '✅ تم الاستعادة من السحابة' : '❌ لم يُفعَّل بعد: ' + (result.error ?? ''))
+            } catch (e) { setMessage('❌ خطأ: ' + unwrapIpcError(e)) }
+            finally { setBusy(false) }
+          }}
+          disabled={busy}
+          className="btn btn-secondary self-start"
+        >
+          ☁️ استعادة من السحابة
+        </button>
+      </section>
       <section className="card p-5 flex flex-col gap-3">
         <h3 className="font-bold text-[var(--text)]">إنشاء نسخة احتياطية يدويًا</h3>
         <p className="text-xs text-[var(--text-muted)]">تُنشئ نسخة احتياطية كاملة عبر db.backup() ثم تُحفظ عبر حوار نظام التشغيل.</p>

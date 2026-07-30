@@ -407,4 +407,52 @@ export function registerIpc(currentDb: Db, userDataDir: string): void {
       return { ok: false, error: (err as Error).message }
     }
   })
+
+  /* الدفعة 5-2: النسخ السحابي عبر Supabase (rafd-dev — معزول تمامًا) (§10، §17.2) */
+  on(IPC.cloudBackupUpload, async (_e): Promise<{ ok: boolean; error?: string; filePath?: string }> => {
+    try {
+      const tempBackup = join(userDataDir, `rafd-cloud-backup-temp-${Date.now()}.db`)
+      await mutableDb.backup(tempBackup)
+      const stat = statSync(tempBackup)
+      const checksum = require('crypto').createHash('sha256').update(readFileSync(tempBackup)).digest('hex')
+      // ملاحظة: رفع الملف الفعلي يتطلب إعداد بيئة rafd-dev (URL + anon key) —
+      // هذه الدالة تُرجع بنية البيانات المُتوقَّعة وتُسجِّل خطأ واضحًا إذا لم تُعد البيئة.
+      return {
+        ok: false,
+        error: 'Cloud upload requires rafd-dev Supabase configuration (§17.2). ' +
+               'Bucket/table must be isolated from rafd-app. Check docs/CLOUD_BACKUP_DESIGN.md.'
+      }
+    } catch (err) {
+      console.error('Cloud backup upload failed:', err)
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  on(IPC.cloudBackupDownload, async (_e, fileName?: string): Promise<{ ok: boolean; rollbackPath?: string; error?: string }> => {
+    try {
+      // ملاحظة: التنزيل الفعلي يتطلب إعداد بيئة rafd-dev وRLS مُطبَّق (§10، §17.2).
+      return {
+        ok: false,
+        error: 'Cloud download requires rafd-dev Supabase environment and deployed RLS (§17.2). ' +
+               'Check docs/CLOUD_BACKUP_DESIGN.md for isolated bucket/table design.'
+      }
+    } catch (err) {
+      console.error('Cloud backup download failed:', err)
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  on(IPC.cloudBackupStatus, async (): Promise<{ lastUpload?: string; fileSize?: number; checksum?: string }> => {
+    try {
+      // ملاحظة: الحالة الفعلية تتطلب استعلام الجدول المعزول في rafd-dev.
+      return {
+        lastUpload: undefined,
+        fileSize: undefined,
+        checksum: undefined
+      }
+    } catch (err) {
+      console.error('Cloud backup status failed:', err)
+      return {}
+    }
+  })
 }

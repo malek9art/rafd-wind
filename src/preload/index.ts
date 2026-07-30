@@ -128,6 +128,11 @@ const api: RafdLocalApi = {
   },
   reports: {
     getPnl: (startDate: string, endDate: string) => ipcRenderer.invoke(IPC.reportsGet, startDate, endDate)
+  },
+  cloudBackup: {
+    upload: () => ipcRenderer.invoke(IPC.cloudBackupUpload),
+    download: (fileName?: string) => ipcRenderer.invoke(IPC.cloudBackupDownload, fileName),
+    status: () => ipcRenderer.invoke(IPC.cloudBackupStatus)
   }
 }
 

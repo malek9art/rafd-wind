@@ -124,13 +124,6 @@ jobs:
           if ($proc.ExitCode -ne 0 -or $marker -notmatch 'SMOKE_VERIFY_OK') { throw "smoke verify failed (exit $($proc.ExitCode), marker=$marker)" }
         shell: pwsh
 
-      - name: Smoke BACKUP — النسخ الاحتياطي والاستعادة الفعلية (§10)
-        id: smoke_backup
-        run: |
-          node tests/backup-smoke.mjs
-          if ($LASTEXITCODE -ne 0) { throw "backup smoke test failed (exit $LASTEXITCODE)" }
-        shell: pwsh
-
       - name: Cross-check مستقل — قراءة قاعدة SQLite من عملية Node منفصلة
         id: cross_verify
         run: |

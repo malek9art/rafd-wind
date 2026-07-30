@@ -528,6 +528,11 @@ export interface RafdLocalApi {
     manualSave(): Promise<{ ok: boolean; path?: string; error?: string }>
     restore(filePath?: string): Promise<{ ok: boolean; rollbackPath?: string; error?: string }>
   }
+  cloudBackup: {
+    upload(): Promise<{ ok: boolean; error?: string; filePath?: string }>
+    download(fileName?: string): Promise<{ ok: boolean; rollbackPath?: string; error?: string }>
+    status(): Promise<{ lastUpload?: string; fileSize?: number; checksum?: string }>
+  }
   reports: {
     getPnl(startDate: string, endDate: string): Promise<PnlReport>
   }
@@ -593,5 +598,8 @@ export const IPC = {
   filesSaveBinary: 'files:save-binary',
   backupManualSave: 'backup:manual-save',
   backupRestore: 'backup:restore',
+  cloudBackupUpload: 'cloud-backup:upload',
+  cloudBackupDownload: 'cloud-backup:download',
+  cloudBackupStatus: 'cloud-backup:status',
   reportsGet: 'reports:get'
 } as const
