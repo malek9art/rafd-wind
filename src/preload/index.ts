@@ -119,7 +119,12 @@ const api: RafdLocalApi = {
     printHtml: (html: string) => ipcRenderer.invoke(IPC.printerPrintHtml, html)
   },
   files: {
-    saveText: (filename: string, content: string) => ipcRenderer.invoke(IPC.filesSaveText, filename, content)
+    saveText: (filename: string, content: string) => ipcRenderer.invoke(IPC.filesSaveText, filename, content),
+    saveBinary: (filename: string, data: Uint8Array) => ipcRenderer.invoke(IPC.filesSaveBinary, filename, data)
+  },
+  backup: {
+    manualSave: () => ipcRenderer.invoke(IPC.backupManualSave),
+    restore: (filePath?: string) => ipcRenderer.invoke(IPC.backupRestore, filePath)
   },
   reports: {
     getPnl: (startDate: string, endDate: string) => ipcRenderer.invoke(IPC.reportsGet, startDate, endDate)

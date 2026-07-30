@@ -522,6 +522,11 @@ export interface RafdLocalApi {
   }
   files: {
     saveText(filename: string, content: string): Promise<boolean>
+    saveBinary(filename: string, data: Uint8Array): Promise<boolean>
+  }
+  backup: {
+    manualSave(): Promise<{ ok: boolean; path?: string; error?: string }>
+    restore(filePath?: string): Promise<{ ok: boolean; rollbackPath?: string; error?: string }>
   }
   reports: {
     getPnl(startDate: string, endDate: string): Promise<PnlReport>
@@ -585,5 +590,8 @@ export const IPC = {
   printerPrintRaw: 'printer:print-raw',
   printerPrintHtml: 'printer:print-html',
   filesSaveText: 'files:save-text',
+  filesSaveBinary: 'files:save-binary',
+  backupManualSave: 'backup:manual-save',
+  backupRestore: 'backup:restore',
   reportsGet: 'reports:get'
 } as const
