@@ -3,11 +3,17 @@ import type { PnlReport } from '../../../shared/types'
 import { unwrapIpcError } from '../App'
 import { exportToCsv } from '../../../shared/csv'
 
+function localDateInput(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export default function ReportsScreen() {
-  const today = new Date().toISOString().slice(0, 10)
-  const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-    .toISOString()
-    .slice(0, 10)
+  const now = new Date()
+  const today = localDateInput(now)
+  const firstDayOfMonth = localDateInput(new Date(now.getFullYear(), now.getMonth(), 1))
 
   // Range select state
   const [startDate, setStartDate] = useState(firstDayOfMonth)
@@ -40,13 +46,23 @@ export default function ReportsScreen() {
   async function handleExportSalesCsv() {
     try {
       const salesList = await window.rafdLocal.sales.list()
-      const cols = ['رقم الفاتورة', 'التاريخ', 'إجمالي الفاتورة', 'المبلغ المدفوع', 'معرف العميل']
+      const cols = [
+        'رقم الفاتورة',
+        'التاريخ',
+        'إجمالي الفاتورة',
+        'المبلغ المدفوع',
+        'طريقة الدفع',
+        'معرف العميل',
+        'الحالة'
+      ]
       const rows = salesList.map((s) => [
         s.invoice_number,
         new Date(s.created_at).toLocaleDateString('ar-YE'),
         s.total,
         s.paid,
-        s.customer_id || 'زبادي نقدي'
+        s.payment_method,
+        s.customer_id || 'نقدي',
+        s.status
       ])
 
       const csvContent = exportToCsv(cols, rows)

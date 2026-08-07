@@ -259,37 +259,54 @@ export function registerIpc(db: Db, userDataDir: string): void {
 
   /* الطباعة */
   on(IPC.printerPrintRaw, async (_e, bytes: Uint8Array): Promise<boolean> => {
+    if (!(bytes instanceof Uint8Array) || bytes.length === 0) return false
     console.log(`printerPrintRaw: ${bytes.length} bytes`)
     let SerialPortMod: any = null
     try {
       SerialPortMod = require('serialport').SerialPort
     } catch (err) {
-      console.warn('serialport is not compiled or available. Fallback to mock printing.', err)
-      return true
+      console.warn('serialport is not compiled or available.', err)
+      return false
     }
-    if (!SerialPortMod) {
-      console.warn('SerialPortMod is null, fallback to mock printing.')
-      return true
-    }
+    if (!SerialPortMod) return false
+
     try {
-      const list = await SerialPortMod.list()
-      const portInfo = list.find((p: any) => p.vendorId || p.productId) || list[0]
-      if (!portInfo) {
-        console.warn('No serial ports found. Mock printing success.')
-        return true
+      const settings = storeSettings.getStoreSettings(db)
+      const configuredPath = settings?.printer_port?.trim()
+      if (!configuredPath) {
+        console.warn('Thermal printer port is not configured')
+        return false
       }
-      const port = new SerialPortMod({
-        path: portInfo.path,
-        baudRate: 9600
-      })
+      const list = await SerialPortMod.list()
+      const portInfo = list.find((port: any) => port.path === configuredPath)
+      if (!portInfo?.path) {
+        console.warn(`Configured thermal printer port is unavailable: ${configuredPath}`)
+        return false
+      }
+      const baudRate = Number(settings?.printer_baud_rate || 9600)
+      const port = new SerialPortMod({ path: portInfo.path, baudRate })
       return new Promise<boolean>((resolve) => {
-        port.write(Buffer.from(bytes), (err: any) => {
-          port.close()
-          if (err) {
-            console.error('Serial port write error:', err)
-            resolve(false)
+        let settled = false
+        const finish = (success: boolean) => {
+          if (settled) return
+          settled = true
+          try {
+            port.close()
+          } catch {
+            /* port may already be closed */
+          }
+          resolve(success)
+        }
+        port.on('error', (error: unknown) => {
+          console.error('Serial port error:', error)
+          finish(false)
+        })
+        port.write(Buffer.from(bytes), (error: Error | null) => {
+          if (error) {
+            console.error('Serial port write error:', error)
+            finish(false)
           } else {
-            resolve(true)
+            finish(true)
           }
         })
       })
@@ -299,21 +316,36 @@ export function registerIpc(db: Db, userDataDir: string): void {
     }
   })
 
-  on(IPC.printerPrintHtml, (_e, html: string): Promise<boolean> => {
+  on(IPC.printerPrintHtml, async (_e, html: string): Promise<boolean> => {
+    if (typeof html !== 'string' || !html.trim()) return false
     console.log(`printerPrintHtml: ${html.length} chars`)
-    const win = BrowserWindow.getFocusedWindow()
-    if (!win) {
-      console.warn('No focused window found for html printing')
-      return Promise.resolve(false)
-    }
-    return new Promise<boolean>((resolve) => {
-      win.webContents.print({ silent: false, printBackground: true }, (success, failureReason) => {
-        if (!success) {
-          console.error(`Print failed: ${failureReason}`)
-        }
-        resolve(success)
-      })
+    const printWindow = new BrowserWindow({
+      show: false,
+      width: 800,
+      height: 1000,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true
+      }
     })
+    try {
+      await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+      return await new Promise<boolean>((resolve) => {
+        printWindow.webContents.print(
+          { silent: false, printBackground: true },
+          (success, failureReason) => {
+            if (!success) console.error(`Print failed: ${failureReason}`)
+            resolve(success)
+          }
+        )
+      })
+    } catch (error) {
+      console.error('Failed to prepare HTML for printing:', error)
+      return false
+    } finally {
+      if (!printWindow.isDestroyed()) printWindow.close()
+    }
   })
 
   on(IPC.filesSaveText, async (_e, filename: string, content: string): Promise<boolean> => {
@@ -321,9 +353,12 @@ export function registerIpc(db: Db, userDataDir: string): void {
     const win = BrowserWindow.getFocusedWindow()
     if (!win) return false
     const { filePath, canceled } = await dialog.showSaveDialog(win, {
-      title: 'حفظ كشف الحساب',
+      title: 'حفظ الملف',
       defaultPath: filename,
-      filters: [{ name: 'Text Files', extensions: ['txt'] }]
+      filters: [
+        { name: 'CSV / Text Files', extensions: ['csv', 'txt'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
     })
     if (canceled || !filePath) return false
     try {

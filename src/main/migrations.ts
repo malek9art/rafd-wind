@@ -18,7 +18,7 @@ import { basename } from 'node:path'
 export type Db = Database.Database
 
 /** إصدار المخطط المتوقَّع في هذا الإصدار من التطبيق */
-export const SCHEMA_VERSION_CODE = 6
+export const SCHEMA_VERSION_CODE = 7
 
 export interface Migration {
   version: number
@@ -428,13 +428,27 @@ function up_v6(db: Db): void {
   db.prepare("UPDATE purchases SET status = 'pending' WHERE status = 'completed'").run()
 }
 
+/** الترقية v7 — إعدادات الطابعة الحرارية بدل اختيار منفذ عشوائي. */
+function up_v7(db: Db): void {
+  if (!hasColumn(db, 'store_settings', 'printer_port')) {
+    db.exec('ALTER TABLE store_settings ADD COLUMN printer_port TEXT')
+  }
+  if (!hasColumn(db, 'store_settings', 'printer_baud_rate')) {
+    db.exec('ALTER TABLE store_settings ADD COLUMN printer_baud_rate INTEGER NOT NULL DEFAULT 9600')
+  }
+  if (!hasColumn(db, 'store_settings', 'receipt_width')) {
+    db.exec('ALTER TABLE store_settings ADD COLUMN receipt_width INTEGER NOT NULL DEFAULT 80')
+  }
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'phase1-full-schema', up: up_v1 },
   { version: 2, name: 'sales-customer-link', up: up_v2 },
   { version: 3, name: 'sale-items-weight', up: up_v3 },
   { version: 4, name: 'sales-integrity-and-voiding', up: up_v4 },
   { version: 5, name: 'sale-item-cost-snapshot', up: up_v5 },
-  { version: 6, name: 'purchase-receiving-state-machine', up: up_v6 }
+  { version: 6, name: 'purchase-receiving-state-machine', up: up_v6 },
+  { version: 7, name: 'thermal-printer-settings', up: up_v7 }
 ]
 
 /* ------------------------------------------------------------------ */

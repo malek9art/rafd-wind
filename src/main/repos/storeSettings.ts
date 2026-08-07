@@ -4,7 +4,7 @@ import type { StoreSettings, StoreSettingsPatch } from '../../shared/types'
 import { buildSetClause, nowIso } from './helpers'
 
 const COLS =
-  'id, name, name_ar, logo_url, primary_color, secondary_color, currency, phone, email, address, tax_number, invoice_footer, business_type, tax_enabled, tax_rate, tax_mode, enabled_categories, custom_categories, created_at, updated_at'
+  'id, name, name_ar, logo_url, primary_color, secondary_color, currency, phone, email, address, tax_number, invoice_footer, business_type, tax_enabled, tax_rate, tax_mode, enabled_categories, custom_categories, created_at, updated_at, printer_port, printer_baud_rate, receipt_width'
 
 const ALLOWED = [
   'name',
@@ -23,7 +23,10 @@ const ALLOWED = [
   'tax_rate',
   'tax_mode',
   'enabled_categories',
-  'custom_categories'
+  'custom_categories',
+  'printer_port',
+  'printer_baud_rate',
+  'receipt_width'
 ] as const
 
 export function getStoreSettings(db: Db): StoreSettings | null {
@@ -38,6 +41,14 @@ export function updateStoreSettings(db: Db, patch: StoreSettingsPatch): StoreSet
   const withDefaults = { ...patch }
   if (patch.tax_enabled !== undefined) {
     ;(withDefaults as Record<string, unknown>).tax_enabled = patch.tax_enabled ? 1 : 0
+  }
+  if (patch.printer_baud_rate !== undefined) {
+    if (!Number.isInteger(patch.printer_baud_rate) || patch.printer_baud_rate < 1200 || patch.printer_baud_rate > 115200) {
+      throw new Error('سرعة الطابعة غير صالحة')
+    }
+  }
+  if (patch.receipt_width !== undefined && patch.receipt_width !== 58 && patch.receipt_width !== 80) {
+    throw new Error('عرض الإيصال يجب أن يكون 58 أو 80 ملم')
   }
   db.prepare(
     `INSERT INTO store_settings (id, created_at, updated_at) VALUES (1, ?, ?)

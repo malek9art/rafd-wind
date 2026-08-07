@@ -388,6 +388,9 @@ export interface StoreSettings {
   tax_mode: string
   enabled_categories: string | null
   custom_categories: string | null
+  printer_port: string | null
+  printer_baud_rate: number
+  receipt_width: number
   created_at: string
   updated_at: string
 }

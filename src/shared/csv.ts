@@ -1,25 +1,16 @@
 /**
- * أدوات تصدير البيانات إلى CSV متوافقة بالكامل مع الحروف العربية لـ Excel (استخدام UTF-8 BOM)
+ * أدوات تصدير البيانات إلى CSV متوافقة مع Excel والحروف العربية.
  */
-export function exportToCsv(columns: string[], rows: any[][]): string {
-  // ترويسة UTF-8 BOM لازمة لفتح الملفات باللغة العربية بشكل سليم في Excel دون تداخل رموز
-  const BOM = '\uFEFF'
-  
-  const header = columns.join(',')
-  const body = rows
-    .map((row) =>
-      row
-        .map((val) => {
-          if (val === null || val === undefined) return ''
-          let str = String(val).replace(/"/g, '""') // هروب علامات التنصيص المزدوجة
-          if (str.includes(',') || str.includes('\n') || str.includes('"')) {
-            str = `"${str}"`
-          }
-          return str
-        })
-        .join(',')
-    )
-    .join('\n')
 
-  return BOM + header + '\n' + body
+function escapeCsvCell(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  const text = String(value).replace(/"/g, '""')
+  return /[",\r\n]/.test(text) ? `"${text}"` : text
+}
+
+export function exportToCsv(columns: string[], rows: unknown[][]): string {
+  const BOM = '\uFEFF'
+  const header = columns.map(escapeCsvCell).join(',')
+  const body = rows.map((row) => row.map(escapeCsvCell).join(',')).join('\r\n')
+  return BOM + header + (rows.length > 0 ? `\r\n${body}` : '\r\n')
 }

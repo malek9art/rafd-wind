@@ -9,12 +9,13 @@ import SuppliersScreen from './screens/SuppliersScreen'
 import PurchasesScreen from './screens/PurchasesScreen'
 import CustomersScreen from './screens/CustomersScreen'
 import ReportsScreen from './screens/ReportsScreen'
+import AdminScreen from './screens/AdminScreen'
 import PosScreen from './screens/PosScreen'
 import ReceiptScreen from './screens/ReceiptScreen'
 
 type Phase = 'loading' | 'activation' | 'setup' | 'login' | 'app'
 type View = {
-  tab: 'pos' | 'products' | 'inventory' | 'suppliers' | 'purchases' | 'customers' | 'reports'
+  tab: 'pos' | 'products' | 'inventory' | 'suppliers' | 'purchases' | 'customers' | 'reports' | 'admin'
   receipt: SaleWithItems | null
 }
 type ActiveLicenseStatus = Extract<LicenseStatus, { activated: true }>
@@ -128,6 +129,9 @@ export default function App() {
               <button className={`btn px-4 py-1.5 text-sm ${view.tab === 'purchases' ? 'bg-white/15' : 'bg-transparent'}`} onClick={() => setView({ tab: 'purchases', receipt: null })}>المشتريات</button>
               <button className={`btn px-4 py-1.5 text-sm ${view.tab === 'customers' ? 'bg-white/15' : 'bg-transparent'}`} onClick={() => setView({ tab: 'customers', receipt: null })}>العملاء</button>
               <button className={`btn px-4 py-1.5 text-sm ${view.tab === 'reports' ? 'bg-white/15' : 'bg-transparent'}`} onClick={() => setView({ tab: 'reports', receipt: null })}>تقارير النشاط</button>
+              {currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager') && (
+                <button className={`btn px-4 py-1.5 text-sm ${view.tab === 'admin' ? 'bg-white/15' : 'bg-transparent'}`} onClick={() => setView({ tab: 'admin', receipt: null })}>الإدارة</button>
+              )}
             </nav>
           </div>
           <div className="flex items-center gap-3 text-xs opacity-90">
@@ -163,6 +167,8 @@ export default function App() {
           <CustomersScreen />
         ) : view.tab === 'reports' ? (
           <ReportsScreen />
+        ) : view.tab === 'admin' && currentUser ? (
+          <AdminScreen user={currentUser} />
         ) : (
           <PosScreen onSaleCompleted={onSaleCompleted} />
         )}

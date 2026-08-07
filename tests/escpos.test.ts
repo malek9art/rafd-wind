@@ -78,6 +78,9 @@ describe('بناء أوامر ESC/POS', () => {
       tax_mode: 'exclusive',
       enabled_categories: null,
       custom_categories: null,
+      printer_port: null,
+      printer_baud_rate: 9600,
+      receipt_width: 80,
       created_at: '2026-01-01',
       updated_at: '2026-01-01'
     }

@@ -249,7 +249,7 @@ describe('قيود UNIQUE وصفّ واحد', () => {
 
 describe('اكتمال أعمدة §6 حرفيًا (حراسة ضد أخطاء النقل)', () => {
   const EXPECTED_COLUMNS: Record<string, string[]> = {
-    store_settings: ['id','name','name_ar','logo_url','primary_color','secondary_color','currency','phone','email','address','tax_number','invoice_footer','business_type','tax_enabled','tax_rate','tax_mode','enabled_categories','custom_categories','created_at','updated_at'],
+    store_settings: ['id','name','name_ar','logo_url','primary_color','secondary_color','currency','phone','email','address','tax_number','invoice_footer','business_type','tax_enabled','tax_rate','tax_mode','enabled_categories','custom_categories','created_at','updated_at','printer_port','printer_baud_rate','receipt_width'],
     app_users: ['id','full_name','role','phone','status','avatar_url','pin_hash','created_at','updated_at'],
     products: ['id','name','name_ar','price','cost','stock','unit','sku','barcode','category','min_stock','image_url','is_active','supplier_id','supplier_name','sell_by_weight','created_at'],
     product_packaging: ['id','product_id','units_per_carton','carton_cost','unit_cost','created_at'],

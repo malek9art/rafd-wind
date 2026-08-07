@@ -181,10 +181,20 @@ describe('إعدادات المتجر (صف وحيد id=1)', () => {
     expect(created.tax_enabled).toBe(0)
 
     // دمج: تحديث لاحق لا يمسّ الحقول غير المذكورة + تطبيع tax_enabled
-    const merged = updateStoreSettings(db, { currency: 'SAR', tax_enabled: true })
+    const merged = updateStoreSettings(db, {
+      currency: 'SAR',
+      tax_enabled: true,
+      printer_port: 'COM3',
+      printer_baud_rate: 115200,
+      receipt_width: 58
+    })
     expect(merged.name_ar).toBe('متجر النور')
     expect(merged.currency).toBe('SAR')
     expect(merged.tax_enabled).toBe(1)
+    expect(merged.printer_port).toBe('COM3')
+    expect(merged.printer_baud_rate).toBe(115200)
+    expect(merged.receipt_width).toBe(58)
+    expect(() => updateStoreSettings(db, { receipt_width: 72 })).toThrow('58 أو 80')
 
     // patch فارغ: يبقي الصف ويحدّث updated_at فقط
     const still = updateStoreSettings(db, {})
