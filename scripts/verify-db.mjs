@@ -30,12 +30,16 @@ const { DatabaseSync } = await import('node:sqlite')
 const db = new DatabaseSync(dbPath, { readOnly: true })
 
 const sale = db
-  .prepare('SELECT id, invoice_number, total, paid, created_at FROM sales WHERE id = ?')
+  .prepare('SELECT id, invoice_number, total, paid, payment_method, status, created_at FROM sales WHERE id = ?')
   .get(state.sale.sale.id)
 if (!sale) throw new Error('sales row not found')
 if (sale.invoice_number !== state.sale.sale.invoice_number)
   throw new Error(`invoice mismatch: ${sale.invoice_number}`)
 if (Math.abs(sale.total - state.sale.sale.total) > 1e-9) throw new Error(`total mismatch: ${sale.total}`)
+if (sale.status !== 'completed') throw new Error(`unexpected sale status: ${sale.status}`)
+if (sale.payment_method !== state.sale.sale.payment_method) {
+  throw new Error(`payment method mismatch: ${sale.payment_method}`)
+}
 
 const items = db
   .prepare(

@@ -25,24 +25,25 @@ export function getPnlReport(db: Db, startDate: string, endDate: string): PnlRep
 
   // 1. حساب إجمالي الإيرادات
   const revRow = db
-    .prepare('SELECT SUM(total) AS sum FROM sales WHERE created_at >= ? AND created_at <= ?')
+    .prepare(
+      "SELECT SUM(total) AS sum FROM sales WHERE status <> 'voided' AND created_at >= ? AND created_at <= ?"
+    )
     .get(start, end) as { sum: number | null }
   const totalRevenue = roundMoney(revRow?.sum ?? 0)
 
   // 2. حساب إجمالي COGS (تكلفة البضاعة المباعة)
-  // COGS لبند مبيعات = cost * (sold_by_weight ? weight_g / 1000 : quantity)
-  // نقوم بربط جدول sale_items بجدول المنتجات products للحصول على التكلفة الحالية للمنتج
+  // COGS لبند مبيعات = unit_cost_snapshot * (sold_by_weight ? weight_g / 1000 : quantity)
+  // تُقرأ التكلفة من sale_items حتى لا تتغير تقارير الفترات التاريخية عند تعديل المنتج.
   const items = db
     .prepare(`
       SELECT 
         si.quantity, 
         si.weight_g, 
-        si.sold_by_weight, 
-        COALESCE(p.cost, 0) AS product_cost
+        si.sold_by_weight,
+        si.unit_cost AS product_cost
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
-      LEFT JOIN products p ON p.id = si.product_id
-      WHERE s.created_at >= ? AND s.created_at <= ?
+      WHERE s.status <> 'voided' AND s.created_at >= ? AND s.created_at <= ?
     `)
     .all(start, end) as Array<{
       quantity: number
@@ -92,7 +93,7 @@ export function getPnlReport(db: Db, startDate: string, endDate: string): PnlRep
         strftime('%Y-%m-%d', created_at) AS date,
         SUM(total) AS amount
       FROM sales
-      WHERE created_at >= ? AND created_at <= ?
+      WHERE status <> 'voided' AND created_at >= ? AND created_at <= ?
       GROUP BY strftime('%Y-%m-%d', created_at)
       ORDER BY date
     `)

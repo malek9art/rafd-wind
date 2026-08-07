@@ -11,6 +11,13 @@ import { buildSetClause, nowIso, requireFound, roundMoney } from './helpers'
 const COLS =
   'id, name, name_ar, price, cost, stock, unit, sku, barcode, category, min_stock, image_url, is_active, supplier_id, supplier_name, sell_by_weight, created_at'
 
+function requireNonNegativeFinite(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error(`${label} يجب أن يكون رقمًا صالحًا وصفرًا أو أكثر`)
+  }
+  return value
+}
+
 export function listProducts(
   db: Db,
   filters?: { active_only?: boolean; category?: string }
@@ -30,9 +37,10 @@ export function createProduct(db: Db, input: NewProduct): Product {
   if (!input.name || typeof input.name !== 'string' || !input.name.trim()) {
     throw new Error('اسم المنتج مطلوب')
   }
-  if (!(input.price >= 0)) {
-    throw new Error('سعر البيع يجب أن يكون صفرًا أو أكثر')
-  }
+  const price = requireNonNegativeFinite(input.price, 'سعر البيع')
+  const cost = requireNonNegativeFinite(input.cost ?? 0, 'سعر التكلفة')
+  const stock = requireNonNegativeFinite(input.stock ?? 0, 'المخزون')
+  const minStock = requireNonNegativeFinite(input.min_stock ?? 5, 'الحد الأدنى للمخزون')
   if (input.supplier_id != null) {
     requireFound(
       db.prepare('SELECT id FROM suppliers WHERE id = ?').get(input.supplier_id),
@@ -48,14 +56,14 @@ export function createProduct(db: Db, input: NewProduct): Product {
       .run({
         name: input.name.trim(),
         name_ar: input.name_ar?.trim() || null,
-        price: roundMoney(input.price),
-        cost: roundMoney(input.cost ?? 0),
-        stock: input.stock ?? 0,
+        price: roundMoney(price),
+        cost: roundMoney(cost),
+        stock,
         unit: input.unit?.trim() || 'pcs',
         sku: input.sku?.trim() || null,
         barcode: input.barcode?.trim() || null,
         category: input.category?.trim() || 'عام',
-        min_stock: input.min_stock ?? 5,
+        min_stock: minStock,
         image_url: input.image_url ?? null,
         is_active: 1,
         supplier_id: input.supplier_id ?? null,
@@ -102,6 +110,18 @@ export function updateProduct(db: Db, id: number, patch: ProductPatch): Product 
   // أعلام boolean عابرة لـIPC تُطبَّع إلى 0/1 قبل الربط — better-sqlite3 يرفض
   // ربط boolean ويرمي TypeError إنجليزيًا (نفس تطبيع بقية المستودعات)
   const normalized: Record<string, unknown> = { ...patch }
+  if (patch.price !== undefined) {
+    normalized.price = roundMoney(requireNonNegativeFinite(patch.price, 'سعر البيع'))
+  }
+  if (patch.cost !== undefined) {
+    normalized.cost = roundMoney(requireNonNegativeFinite(patch.cost, 'سعر التكلفة'))
+  }
+  if (patch.stock !== undefined) {
+    normalized.stock = requireNonNegativeFinite(patch.stock, 'المخزون')
+  }
+  if (patch.min_stock !== undefined) {
+    normalized.min_stock = requireNonNegativeFinite(patch.min_stock, 'الحد الأدنى للمخزون')
+  }
   if (patch.is_active !== undefined) normalized.is_active = patch.is_active ? 1 : 0
   if (patch.sell_by_weight !== undefined) normalized.sell_by_weight = patch.sell_by_weight ? 1 : 0
   const { clause, values } = buildSetClause(normalized, UPDATE_ALLOWED)
@@ -156,10 +176,14 @@ export function restockProduct(
   if (!Number.isInteger(cartons) || cartons <= 0) {
     throw new Error('عدد الكراتين الموردة يجب أن يكون عددًا صحيحًا أكبر من صفر')
   }
-  if (typeof cartonCost !== 'number' || isNaN(cartonCost) || cartonCost < 0) {
+  if (typeof cartonCost !== 'number' || !Number.isFinite(cartonCost) || cartonCost < 0) {
     throw new Error('تكلفة الكرتون المورد يجب أن تكون صفرًا أو أكثر')
   }
-  if (typeof unitsPerCarton !== 'number' || isNaN(unitsPerCarton) || unitsPerCarton <= 0) {
+  if (
+    typeof unitsPerCarton !== 'number' ||
+    !Number.isFinite(unitsPerCarton) ||
+    unitsPerCarton <= 0
+  ) {
     throw new Error('عدد الوحدات في الكرتون يجب أن يكون أكبر من صفر')
   }
 

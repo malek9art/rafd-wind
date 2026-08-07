@@ -59,6 +59,11 @@ export interface Sale {
   bank_account_id: number | null
   customer_id: number | null
   created_at: string
+  payment_method: string
+  status: string
+  voided_at: string | null
+  voided_by: number | null
+  void_reason: string | null
 }
 
 export interface SaleItem {
@@ -68,6 +73,7 @@ export interface SaleItem {
   product_name: string
   quantity: number
   unit_price: number
+  unit_cost: number
   total: number
   weight_g: number | null
   sold_by_weight: number
@@ -116,7 +122,7 @@ export type NewCustomer = Partial<Pick<Customer, 'phone' | 'email' | 'balance' |
 }
 export type CustomerPatch = Partial<Omit<NewCustomer, 'name'> & { name: string }>
 
-export type LedgerEntryType = 'sale_credit' | 'payment' | 'adjustment'
+export type LedgerEntryType = 'sale_credit' | 'sale_void' | 'payment' | 'adjustment'
 export type SupplierLedgerEntryType = 'purchase_credit' | 'payment' | 'adjustment'
 
 export interface LedgerEntry {
@@ -492,10 +498,13 @@ export interface RafdLocalApi {
     delete(id: number): Promise<void>
   }
   sales: {
-    list(filters?: { customer_id?: number }): Promise<Sale[]>
+    list(filters?: { customer_id?: number; status?: string }): Promise<Sale[]>
     get(sale_id: number): Promise<SaleWithItems>
     create(payload: NewSale): Promise<SaleWithItems>
     update(id: number, patch: SalePatch): Promise<Sale>
+    /** إلغاء محاسبي مع الاحتفاظ بالفاتورة وسجل التدقيق */
+    void(id: number, reason: string): Promise<Sale>
+    /** قناة توافق قديمة تُرفض عمدًا لمنع الحذف الصلب للفواتير */
     delete(id: number): Promise<void>
   }
   users: {
@@ -570,6 +579,7 @@ export const IPC = {
   salesGet: 'sales:get',
   salesCreate: 'sales:create',
   salesUpdate: 'sales:update',
+  salesVoid: 'sales:void',
   salesDelete: 'sales:delete',
   usersList: 'users:list',
   usersGet: 'users:get',

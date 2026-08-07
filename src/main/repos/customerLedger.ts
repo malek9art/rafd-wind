@@ -1,6 +1,7 @@
 /**
  * دفتر العملاء — المنطق المنقول حرفيًا:
  *   sale_credit → balance += amount        (دين جديد على العميل)
+ *   sale_void   → balance = max(0, -)       (عكس دين فاتورة ملغاة)
  *   payment     → balance = max(0, -)       (سداد يخفض الدين، بحد أدنى صفر)
  *   adjustment  → balance = amount          (تعيين مطلق)
  * تحسين محلي مقصود (موافق عليه نصًا في التكليف): القيد + تحديث الرصيد في
@@ -11,7 +12,7 @@ import type { LedgerEntry, LedgerEntryType, NewLedgerEntry } from '../../shared/
 import { getCustomer } from './customers'
 import { nowIso, requireFound, requirePositiveMoney, roundMoney } from './helpers'
 
-const VALID_TYPES: readonly LedgerEntryType[] = ['sale_credit', 'payment', 'adjustment']
+const VALID_TYPES: readonly LedgerEntryType[] = ['sale_credit', 'sale_void', 'payment', 'adjustment']
 const COLS =
   'id, customer_id, type, amount, balance_after, reference, notes, sale_id, created_at'
 
@@ -35,6 +36,9 @@ export function addLedgerEntry(db: Db, input: NewLedgerEntry): LedgerEntry {
     throw new Error(`نوع قيد غير معروف: ${input.type}`)
   }
   // sale_credit/payment مبلغ موجب؛ adjustment تعيين مطلق (≥ 0)
+  if (input.type === 'sale_void' && input.sale_id == null) {
+    throw new Error('قيد عكس البيع يتطلب مرجع فاتورة')
+  }
   const allowZero = input.type === 'adjustment'
   const amount = requirePositiveMoney(input.amount, 'مبلغ القيد', allowZero)
 
@@ -45,6 +49,7 @@ export function addLedgerEntry(db: Db, input: NewLedgerEntry): LedgerEntry {
       case 'sale_credit':
         newBalance = roundMoney(customer.balance + amount)
         break
+      case 'sale_void':
       case 'payment':
         newBalance = roundMoney(Math.max(0, customer.balance - amount))
         break

@@ -189,13 +189,16 @@ export function registerIpc(db: Db, userDataDir: string): void {
   on(IPC.paymentTerminalsDelete, (_e, id: number) => deletePaymentTerminal(db, id))
 
   /* مبيعات */
-  on(IPC.salesList, (_e, filters?: { customer_id?: number }) =>
+  on(IPC.salesList, (_e, filters?: { customer_id?: number; status?: string }) =>
     sales.listSales(db, filters)
   )
   on(IPC.salesGet, (_e, sale_id: number) => sales.getSaleWithItems(db, sale_id))
   on(IPC.salesCreate, (_e, payload: NewSale) => sales.createSale(db, payload, actor()))
   on(IPC.salesUpdate, (_e, id: number, patch: SalePatch) =>
     sales.updateSale(db, id, patch, actor())
+  )
+  on(IPC.salesVoid, (_e, id: number, reason: string) =>
+    sales.voidSale(db, id, reason, actor())
   )
   on(IPC.salesDelete, (_e, id: number) => sales.deleteSale(db, id, actor()))
 

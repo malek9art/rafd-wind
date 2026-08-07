@@ -74,7 +74,8 @@ const EXPECTED_TABLES = [
   'expenses',
   'bank_accounts',
   'payment_terminals',
-  'audit_logs'
+  'audit_logs',
+  'invoice_sequences'
 ]
 
 describe('ترقية قاعدة جديدة كليًا', () => {
@@ -101,6 +102,11 @@ describe('ترقية قاعدة عميل من المرحلة 0 (v0 → الإص�
     legacy
       .prepare("INSERT INTO sales (invoice_number, total, paid, created_at) VALUES ('INV-000001', 11, 11, '2026-07-26T01:00:00.000Z')")
       .run()
+    legacy
+      .prepare(
+        "INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, total) VALUES (1, 1, 'كولا', 2, 5.5, 11)"
+      )
+      .run()
     legacy.close()
   })
 
@@ -126,11 +132,14 @@ describe('ترقية قاعدة عميل من المرحلة 0 (v0 → الإص�
     backupDb.close()
     dbs.push(backupDb)
 
-    // البيانات الحية سالمة + الأعمدة الجديدة أُضيفت (v1: sku/bank_account_id، v2: sales.customer_id)
+    // البيانات الحية سالمة + الأعمدة الجديدة أُضيفت عبر سلسلة migrations
     expect(hasColumn(db, 'products', 'sku')).toBe(true)
     expect(hasColumn(db, 'products', 'supplier_id')).toBe(true)
     expect(hasColumn(db, 'sales', 'bank_account_id')).toBe(true)
     expect(hasColumn(db, 'sales', 'customer_id')).toBe(true)
+    expect(hasColumn(db, 'sales', 'payment_method')).toBe(true)
+    expect(hasColumn(db, 'sales', 'status')).toBe(true)
+    expect(hasTable(db, 'invoice_sequences')).toBe(true)
     expect(
       (
         db.prepare(
@@ -152,6 +161,14 @@ describe('ترقية قاعدة عميل من المرحلة 0 (v0 → الإص�
     >
     expect(sale.invoice_number).toBe('INV-000001')
     expect(sale.bank_account_id).toBeNull()
+    expect(
+      (db.prepare('SELECT next_number FROM invoice_sequences WHERE id = 1').get() as { next_number: number })
+        .next_number
+    ).toBe(2)
+    expect(
+      (db.prepare('SELECT unit_cost FROM sale_items WHERE sale_id = 1').get() as { unit_cost: number })
+        .unit_cost
+    ).toBe(4)
   })
 
   it('إعادة فتح القاعدة المُرقّاة idempotent: لا خطأ ولا نسخة جديدة', () => {

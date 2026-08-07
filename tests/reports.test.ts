@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openDb, type Db } from '../src/main/db'
 import { createProduct } from '../src/main/repos/products'
-import { createSale } from '../src/main/repos/sales'
+import { createSale, voidSale } from '../src/main/repos/sales'
 import { createExpense } from '../src/main/repos/crudSimple'
 import { createPurchase } from '../src/main/repos/purchases'
 import { getPnlReport } from '../src/main/repos/reports'
@@ -98,5 +98,25 @@ describe('منطق التقارير والربح والخسارة', () => {
     // الإيراد اليومي
     expect(report.dailyRevenue).toHaveLength(1)
     expect(report.dailyRevenue[0].amount).toBe(400)
+  })
+
+  it('يستبعد الفاتورة الملغاة من الإيراد والتكلفة والإيراد اليومي', () => {
+    const product = createProduct(db, { name: 'صنف ملغى', price: 100, cost: 60, stock: 5 })
+    const { sale } = createSale(db, { items: [{ product_id: product.id, quantity: 1 }], paid: 100 })
+    voidSale(db, sale.id, 'اختبار الإلغاء')
+
+    const report = getPnlReport(db, '2026-07-01', '2026-07-31')
+    expect(report.totalRevenue).toBe(0)
+    expect(report.totalCogs).toBe(0)
+    expect(report.dailyRevenue).toHaveLength(0)
+  })
+
+  it('يستخدم تكلفة الصنف وقت البيع لا التكلفة الحالية عند إعداد COGS التاريخي', () => {
+    const product = createProduct(db, { name: 'صنف بتكلفة متغيرة', price: 100, cost: 60, stock: 5 })
+    createSale(db, { items: [{ product_id: product.id, quantity: 1 }], paid: 100 })
+    db.prepare('UPDATE products SET cost = 90 WHERE id = ?').run(product.id)
+
+    const report = getPnlReport(db, '2026-07-01', '2026-07-31')
+    expect(report.totalCogs).toBe(60)
   })
 })

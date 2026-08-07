@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { openDb, type Db } from '../src/main/db'
 import { createProduct, getProduct } from '../src/main/repos/products'
 import { createCustomer, getCustomer } from '../src/main/repos/customers'
-import { listLedgerByCustomer } from '../src/main/repos/customerLedger'
+import { addLedgerEntry, listLedgerByCustomer } from '../src/main/repos/customerLedger'
 import { createBankAccount } from '../src/main/repos/crudSimple'
 import { listAuditLogs } from '../src/main/repos/auditLogs'
 import { createUser } from '../src/main/repos/users'
@@ -19,6 +19,7 @@ import {
   createSale,
   deleteSale,
   getSaleWithItems,
+  voidSale,
   listSales,
   updateSale,
   type ActorRef
@@ -83,6 +84,35 @@ describe('إتمام بيع', () => {
 
     expect(listSales(db)).toHaveLength(0)
     expect(getProduct(db, pid).stock).toBe(2)
+  })
+
+  it('يرفض تكرار المنتج داخل الفاتورة دون أي أثر على المخزون أو الأرقام', () => {
+    const pid = seedProduct(10, 5)
+    expect(() =>
+      createSale(
+        db,
+        {
+          items: [
+            { product_id: pid, quantity: 3 },
+            { product_id: pid, quantity: 3 }
+          ],
+          paid: 60
+        },
+        MANAGER
+      )
+    ).toThrow('لا يمكن تكرار المنتج')
+    expect(listSales(db)).toHaveLength(0)
+    expect(getProduct(db, pid).stock).toBe(5)
+  })
+
+  it('يمنع بيع المنتج المعطّل', () => {
+    const pid = seedProduct(10, 5)
+    db.prepare('UPDATE products SET is_active = 0 WHERE id = ?').run(pid)
+    expect(() =>
+      createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 10 }, MANAGER)
+    ).toThrow('معطّل')
+    expect(listSales(db)).toHaveLength(0)
+    expect(getProduct(db, pid).stock).toBe(5)
   })
 })
 
@@ -241,13 +271,27 @@ describe('قراءة وتعديل وحذف', () => {
 
   it('update محافظ: paid وbank_account_id فقط ولا يمسّ total', () => {
     const pid = seedProduct(10, 10)
-    const { sale } = createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 10 }, MANAGER)
     const bank = createBankAccount(db, { bank_name: 'ب', account_name: 'ح' })
+    const { sale } = createSale(
+      db,
+      {
+        items: [{ product_id: pid, quantity: 1 }],
+        paid: 10,
+        payment_method: 'transfer',
+        bank_account_id: bank.id
+      },
+      MANAGER
+    )
 
-    const updated = updateSale(db, sale.id, { paid: 6, bank_account_id: bank.id }, MANAGER)
+    const paidUpdated = updateSale(db, sale.id, { paid: 6 }, MANAGER)
+    expect(paidUpdated.paid).toBe(6)
+    expect(paidUpdated.total).toBe(10)
+
+    const updated = updateSale(db, sale.id, { bank_account_id: bank.id }, MANAGER)
     expect(updated.paid).toBe(6)
     expect(updated.bank_account_id).toBe(bank.id)
     expect(updated.total).toBe(10)
+    expect(updated.payment_method).toBe('transfer')
 
     expect(() => updateSale(db, sale.id, { paid: -1 }, MANAGER)).toThrow('المبلغ المدفوع غير صالح')
     expect(() => updateSale(db, sale.id, { bank_account_id: 999 }, MANAGER)).toThrow('حساب بنكي غير موجود: 999')
@@ -258,18 +302,21 @@ describe('قراءة وتعديل وحذف', () => {
     expect(still.bank_account_id).toBe(bank.id)
   })
 
-  it('حذف فاتورة نقدية يعيد المخزون', () => {
+  it('إلغاء فاتورة نقدية يعيد المخزون ويحافظ على السجل', () => {
     const pid = seedProduct(10, 3)
     const { sale } = createSale(db, { items: [{ product_id: pid, quantity: 2 }], paid: 20 }, MANAGER)
     expect(getProduct(db, pid).stock).toBe(1)
 
-    deleteSale(db, sale.id, MANAGER)
-    expect(listSales(db)).toHaveLength(0)
+    const voided = voidSale(db, sale.id, 'إلغاء بناءً على طلب العميل', MANAGER)
+    expect(voided.status).toBe('voided')
+    expect(voided.void_reason).toBe('إلغاء بناءً على طلب العميل')
+    expect(listSales(db)).toHaveLength(1)
+    expect(getSaleWithItems(db, sale.id).sale.status).toBe('voided')
     expect(getProduct(db, pid).stock).toBe(3)
-    expect(() => getSaleWithItems(db, sale.id)).toThrow('فاتورة غير موجودة')
+    expect(() => deleteSale(db, sale.id, MANAGER)).toThrow('الحذف الصلب')
   })
 
-  it('حذف فاتورة آجلة محظور مع قيود مرتبطة، ويُسمح بعد تسوية الدفتر', () => {
+  it('إلغاء فاتورة آجلة بلا حركات لاحقة يعكس قيد الدين والمخزون', () => {
     const pid = seedProduct(50, 3)
     const cust = createCustomer(db, { name: 'أحمد' })
     const { sale } = createSale(
@@ -279,14 +326,51 @@ describe('قراءة وتعديل وحذف', () => {
     )
     expect(listLedgerByCustomer(db, cust.id)).toHaveLength(1)
 
-    expect(() => deleteSale(db, sale.id, MANAGER)).toThrow('لا يمكن حذف فاتورة لها قيود دفتر عميل')
-    expect(getProduct(db, pid).stock).toBe(2) // المحاولة الفاشلة لم تُعد مخزونًا جزئيًا
-
-    // «سوِّ الدفتر أولًا»: إزالة قيود هذه الفاتورة (شاشة العميل في مرحلة لاحقة؛ هنا بالمعنى نفسه)
-    db.prepare('DELETE FROM customer_ledger WHERE sale_id = ?').run(sale.id)
-    deleteSale(db, sale.id, MANAGER)
-    expect(listSales(db)).toHaveLength(0)
+    const voided = voidSale(db, sale.id, 'إلغاء اختبار', MANAGER)
+    expect(voided.status).toBe('voided')
     expect(getProduct(db, pid).stock).toBe(3)
+    expect(getCustomer(db, cust.id).balance).toBe(0)
+    expect(listLedgerByCustomer(db, cust.id).map((entry) => entry.type)).toEqual([
+      'sale_credit',
+      'sale_void'
+    ])
+  })
+
+  it('يمنع إلغاء فاتورة آجلة بعد وجود حركة لاحقة في دفتر العميل', () => {
+    const pid = seedProduct(50, 3)
+    const cust = createCustomer(db, { name: 'أحمد' })
+    const { sale } = createSale(
+      db,
+      { items: [{ product_id: pid, quantity: 1 }], paid: 20, customer_id: cust.id },
+      MANAGER
+    )
+    addLedgerEntry(db, { customer_id: cust.id, amount: 10, type: 'payment' })
+
+    expect(() => voidSale(db, sale.id, 'إلغاء غير آمن', MANAGER)).toThrow(
+      'سبق أن تحرك دفتر العميل'
+    )
+    expect(getProduct(db, pid).stock).toBe(2)
+    expect(getSaleWithItems(db, sale.id).sale.status).toBe('completed')
+  })
+
+  it('إلغاء فاتورة عميل مدفوعة بالكامل يعكس إجمالي مشترياته ويحافظ على الرقم', () => {
+    const pid = seedProduct(10, 3)
+    const customer = createCustomer(db, { name: 'عميل نقدي' })
+    const first = createSale(
+      db,
+      { items: [{ product_id: pid, quantity: 1 }], paid: 10, customer_id: customer.id },
+      MANAGER
+    )
+    expect(getCustomer(db, customer.id).total_purchases).toBe(10)
+
+    const voided = voidSale(db, first.sale.id, 'إلغاء فاتورة مدفوعة', MANAGER)
+    expect(voided.status).toBe('voided')
+    expect(getCustomer(db, customer.id).total_purchases).toBe(0)
+    expect(getProduct(db, pid).stock).toBe(3)
+
+    const next = createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 10 }, MANAGER)
+    expect(next.sale.invoice_number).toBe('INV-000002')
+    expect(next.sale.payment_method).toBe('cash')
   })
 })
 
@@ -313,14 +397,14 @@ describe('سجل التدقيق', () => {
     expect(JSON.parse(creates[0].meta as string).invoice_number).toBe(sale.invoice_number)
 
     updateSale(db, sale.id, { paid: 9 }, { userId: updater.id, role: 'manager' })
-    deleteSale(db, sale.id, { userId: deleter.id, role: 'manager' })
+    voidSale(db, sale.id, 'تصحيح إداري', { userId: deleter.id, role: 'manager' })
 
     const updates = listAuditLogs(db, { action: 'sale.update' })
     expect(updates).toHaveLength(1)
     expect(updates[0].user_id).toBe(updater.id)
-    const deletes = listAuditLogs(db, { action: 'sale.delete' })
-    expect(deletes).toHaveLength(1)
-    expect(deletes[0].user_id).toBe(deleter.id)
+    const voids = listAuditLogs(db, { action: 'sale.void' })
+    expect(voids).toHaveLength(1)
+    expect(voids[0].user_id).toBe(deleter.id)
   })
 })
 
@@ -386,5 +470,26 @@ describe('مبيعات الميزان والوزن', () => {
         MANAGER
       )
     ).toThrow('مخزون غير كافٍ')
+  })
+
+  it('يرفض الوزن المفقود أو الصفري أو السالب ولا يترك فاتورة', () => {
+    const pid = createProduct(db, {
+      name: 'لحم',
+      price: 100,
+      stock: 5,
+      sell_by_weight: 1
+    }).id
+
+    expect(() => createSale(db, { items: [{ product_id: pid, quantity: 1 }], paid: 0 }, MANAGER)).toThrow(
+      'الوزن يجب أن يكون أكبر من صفر'
+    )
+    expect(() =>
+      createSale(db, { items: [{ product_id: pid, quantity: 1, weight_g: 0, sold_by_weight: 1 }], paid: 0 }, MANAGER)
+    ).toThrow('الوزن يجب أن يكون أكبر من صفر')
+    expect(() =>
+      createSale(db, { items: [{ product_id: pid, quantity: 1, weight_g: -100, sold_by_weight: 1 }], paid: 0 }, MANAGER)
+    ).toThrow('الوزن يجب أن يكون أكبر من صفر')
+    expect(listSales(db)).toHaveLength(0)
+    expect(getProduct(db, pid).stock).toBe(5)
   })
 })

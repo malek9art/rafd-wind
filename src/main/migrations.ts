@@ -18,7 +18,7 @@ import { basename } from 'node:path'
 export type Db = Database.Database
 
 /** إصدار المخطط المتوقَّع في هذا الإصدار من التطبيق */
-export const SCHEMA_VERSION_CODE = 3
+export const SCHEMA_VERSION_CODE = 5
 
 export interface Migration {
   version: number
@@ -366,10 +366,65 @@ function up_v3(db: Db): void {
   }
 }
 
+/**
+ * الترقية v4 — سلامة الفواتير وإلغاء الفاتورة بدل الحذف الصلب:
+ * - حفظ طريقة الدفع وحالة الفاتورة وبيانات الإلغاء.
+ * - عداد مستقل لأرقام الفواتير يمنع إعادة استخدام الرقم بعد حذف/إلغاء السجل
+ *   أو حذف آخر فاتورة تاريخيًا.
+ */
+function up_v4(db: Db): void {
+  const addCol = (table: string, column: string, ddl: string): void => {
+    if (!hasColumn(db, table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`)
+  }
+
+  addCol('sales', 'payment_method', "payment_method TEXT NOT NULL DEFAULT 'cash'")
+  addCol('sales', 'status', "status TEXT NOT NULL DEFAULT 'completed'")
+  addCol('sales', 'voided_at', 'voided_at TEXT')
+  addCol(
+    'sales',
+    'voided_by',
+    'voided_by INTEGER REFERENCES app_users(id) ON DELETE SET NULL'
+  )
+  addCol('sales', 'void_reason', 'void_reason TEXT')
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS invoice_sequences (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      next_number INTEGER NOT NULL CHECK (next_number > 0)
+    );
+
+    INSERT OR IGNORE INTO invoice_sequences (id, next_number)
+    SELECT 1,
+      COALESCE(MAX(CAST(SUBSTR(invoice_number, 5) AS INTEGER)), 0) + 1
+    FROM sales
+    WHERE invoice_number LIKE 'INV-%';
+  `)
+}
+
+/**
+ * الترقية v5 — حفظ تكلفة المنتج وقت البيع حتى لا تتغير تقارير الفترات
+ * التاريخية عند تعديل تكلفة المنتج الحالية لاحقًا.
+ */
+function up_v5(db: Db): void {
+  if (!hasColumn(db, 'sale_items', 'unit_cost')) {
+    db.exec('ALTER TABLE sale_items ADD COLUMN unit_cost REAL NOT NULL DEFAULT 0')
+  }
+  db.exec(`
+    UPDATE sale_items
+    SET unit_cost = COALESCE(
+      (SELECT p.cost FROM products p WHERE p.id = sale_items.product_id),
+      0
+    )
+    WHERE unit_cost = 0;
+  `)
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'phase1-full-schema', up: up_v1 },
   { version: 2, name: 'sales-customer-link', up: up_v2 },
-  { version: 3, name: 'sale-items-weight', up: up_v3 }
+  { version: 3, name: 'sale-items-weight', up: up_v3 },
+  { version: 4, name: 'sales-integrity-and-voiding', up: up_v4 },
+  { version: 5, name: 'sale-item-cost-snapshot', up: up_v5 }
 ]
 
 /* ------------------------------------------------------------------ */

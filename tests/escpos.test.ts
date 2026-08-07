@@ -36,7 +36,12 @@ describe('بناء أوامر ESC/POS', () => {
         paid: 100,
         bank_account_id: null,
         customer_id: null,
-        created_at: '2026-07-27T12:00:00.000Z'
+        created_at: '2026-07-27T12:00:00.000Z',
+        payment_method: 'cash',
+        status: 'completed',
+        voided_at: null,
+        voided_by: null,
+        void_reason: null
       },
       items: [
         {
@@ -46,6 +51,7 @@ describe('بناء أوامر ESC/POS', () => {
           product_name: 'منتج تجريبي',
           quantity: 2,
           unit_price: 50,
+          unit_cost: 30,
           total: 100,
           weight_g: null,
           sold_by_weight: 0

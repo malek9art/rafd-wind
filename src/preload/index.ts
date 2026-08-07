@@ -95,6 +95,7 @@ const api: RafdLocalApi = {
     get: (sale_id: number) => ipcRenderer.invoke(IPC.salesGet, sale_id),
     create: (payload: NewSale) => ipcRenderer.invoke(IPC.salesCreate, payload),
     update: (id: number, patch: SalePatch) => ipcRenderer.invoke(IPC.salesUpdate, id, patch),
+    void: (id: number, reason: string) => ipcRenderer.invoke(IPC.salesVoid, id, reason),
     delete: (id: number) => ipcRenderer.invoke(IPC.salesDelete, id)
   },
   users: {

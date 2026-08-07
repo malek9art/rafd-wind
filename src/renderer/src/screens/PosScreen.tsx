@@ -69,7 +69,7 @@ export default function PosScreen({ onSaleCompleted }: Props) {
   // Load database lists
   const refresh = useCallback(async () => {
     try {
-      const pList = await window.rafdLocal.products.list()
+      const pList = await window.rafdLocal.products.list({ active_only: true })
       setProducts(pList)
     } catch (e) {
       setError(unwrapIpcError(e))
@@ -211,6 +211,10 @@ export default function PosScreen({ onSaleCompleted }: Props) {
     setCart((prev) =>
       prev.map((l) => {
         if (l.product.id !== productId) return l
+        if (!Number.isFinite(weightG) || weightG <= 0) {
+          setError('الوزن يجب أن يكون أكبر من صفر')
+          return l
+        }
         if (weightG / 1000 > l.product.stock) {
           setError(`الوزن المطلوب (${weightG / 1000} كجم) يتجاوز المخزون المتاح للمنتج «${l.product.name_ar || l.product.name}» المتاح: ${l.product.stock}`)
           return l
