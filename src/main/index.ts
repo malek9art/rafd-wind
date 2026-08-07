@@ -19,6 +19,9 @@ import type { SaleWithItems } from '../shared/types'
 // قراءة حقول package.json من جانب أدوات التغليف.
 app.setName('RAFD')
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) app.quit()
+
 const SMOKE_WRITE = '--rafd-smoke'
 const SMOKE_VERIFY = '--rafd-smoke-verify'
 const smokeMode: 'write' | 'verify' | null = process.argv.includes(SMOKE_WRITE)
@@ -28,6 +31,24 @@ const smokeMode: 'write' | 'verify' | null = process.argv.includes(SMOKE_WRITE)
     : null
 
 let db: Db
+let mainWindow: BrowserWindow | null = null
+let dbClosed = false
+
+function closeDb(): void {
+  if (db && !dbClosed) {
+    db.close()
+    dbClosed = true
+  }
+}
+
+if (hasSingleInstanceLock) {
+  app.on('second-instance', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  })
+}
+
 const userDataDir = () => app.getPath('userData')
 const dbFilePath = () => join(userDataDir(), 'rafd.db')
 
@@ -53,6 +74,10 @@ function createWindow(): BrowserWindow {
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+  mainWindow = win
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null
+  })
   return win
 }
 
@@ -75,6 +100,7 @@ function smokeFinish(ok: boolean, marker: string, detail: string, code: number):
   const line = `${marker} ${detail}`
   console.log(line)
   writeFileSync(join(userDataDir(), 'smoke-result.txt'), line, 'utf8')
+  closeDb()
   app.exit(ok ? 0 : code)
 }
 
@@ -144,25 +170,40 @@ if (smokeMode) {
   app.commandLine.appendSwitch('disable-gpu')
 }
 
-app.whenReady().then(async () => {
-  db = openDb(dbFilePath())
-  registerIpc(db, userDataDir())
-  const win = createWindow()
+app.whenReady()
+  .then(async () => {
+    if (!hasSingleInstanceLock) return
+    try {
+      db = openDb(dbFilePath())
+      registerIpc(db, userDataDir())
+      const win = createWindow()
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      })
+
+      if (smokeMode) {
+        win.webContents.once('did-finish-load', () => {
+          if (smokeMode === 'write') void runSmokeWrite(win)
+          else void runSmokeVerify()
+        })
+        win.webContents.once('did-fail-load', (_e, code, desc) => {
+          smokeFinish(false, 'SMOKE_LOAD_FAIL', `${code} ${desc}`, 5)
+        })
+      }
+    } catch (error) {
+      console.error('RAFD startup failed:', error)
+      closeDb()
+      app.quit()
+    }
+  })
+  .catch((error) => {
+    console.error('RAFD application initialization failed:', error)
+    closeDb()
+    app.quit()
   })
 
-  if (smokeMode) {
-    win.webContents.once('did-finish-load', () => {
-      if (smokeMode === 'write') void runSmokeWrite(win)
-      else void runSmokeVerify()
-    })
-    win.webContents.once('did-fail-load', (_e, code, desc) => {
-      smokeFinish(false, 'SMOKE_LOAD_FAIL', `${code} ${desc}`, 5)
-    })
-  }
-})
+app.on('before-quit', () => closeDb())
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

@@ -99,6 +99,9 @@ const api: RafdLocalApi = {
     delete: (id: number) => ipcRenderer.invoke(IPC.salesDelete, id)
   },
   users: {
+    count: () => ipcRenderer.invoke(IPC.usersCount),
+    bootstrap: (full_name: string, pin: string) =>
+      ipcRenderer.invoke(IPC.usersBootstrap, full_name, pin),
     list: () => ipcRenderer.invoke(IPC.usersList),
     get: (id: number) => ipcRenderer.invoke(IPC.usersGet, id),
     create: (payload: NewUser) => ipcRenderer.invoke(IPC.usersCreate, payload),

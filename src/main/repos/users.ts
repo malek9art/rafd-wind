@@ -9,12 +9,25 @@ import type { Db } from '../db'
 import { hashPin, verifyPin } from '../pin'
 import type { AppUser, NewUser, UserPatch } from '../../shared/types'
 import { buildSetClause, nowIso, requireFound } from './helpers'
-import { setCurrentUser } from '../session'
+import { clearCurrentUser, getCurrentUser, setCurrentUser } from '../session'
 
 const SAFE_COLS = 'id, full_name, role, phone, status, avatar_url, created_at, updated_at'
 
 export function listUsers(db: Db): AppUser[] {
   return db.prepare(`SELECT ${SAFE_COLS} FROM app_users ORDER BY id`).all() as AppUser[]
+}
+
+export function countUsers(db: Db): number {
+  return (db.prepare('SELECT COUNT(*) AS c FROM app_users').get() as { c: number }).c
+}
+
+export function bootstrapAdmin(db: Db, fullName: string, pin: string): AppUser {
+  if (countUsers(db) > 0) throw new Error('تم إعداد المستخدمين مسبقًا — سجّل الدخول أولًا')
+  if (typeof fullName !== 'string' || !fullName.trim()) throw new Error('اسم المستخدم مطلوب')
+  if (typeof pin !== 'string' || !pin) throw new Error('PIN المدير مطلوب')
+  const user = createUser(db, { full_name: fullName, role: 'admin', status: 'active', pin })
+  setCurrentUser(user)
+  return user
 }
 
 export function getUser(db: Db, id: number): AppUser {
@@ -66,11 +79,19 @@ export function updateUser(db: Db, id: number, patch: UserPatch): AppUser {
     nowIso(),
     id
   )
-  return getUser(db, id)
+  const updated = getUser(db, id)
+  if (getCurrentUser()?.id === id) {
+    if (updated.status === 'active') setCurrentUser(updated)
+    else clearCurrentUser()
+  }
+  return updated
 }
 
 export function deleteUser(db: Db, id: number): void {
   getUser(db, id)
+  if (getCurrentUser()?.id === id) {
+    throw new Error('لا يمكن حذف المستخدم النشط — سجّل الخروج أولًا')
+  }
   db.prepare('DELETE FROM app_users WHERE id = ?').run(id)
 }
 

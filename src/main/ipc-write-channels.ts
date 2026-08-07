@@ -39,6 +39,7 @@ export const WRITE_CHANNELS: ReadonlySet<string> = new Set<string>([
   IPC.salesUpdate,
   IPC.salesVoid,
   IPC.salesDelete,
+  IPC.usersBootstrap,
   IPC.usersCreate,
   IPC.usersUpdate,
   IPC.usersDelete,

@@ -516,6 +516,8 @@ export interface RafdLocalApi {
     delete(id: number): Promise<void>
   }
   users: {
+    count(): Promise<number>
+    bootstrap(full_name: string, pin: string): Promise<AppUser>
     list(): Promise<AppUser[]>
     get(id: number): Promise<AppUser>
     create(payload: NewUser): Promise<AppUser>
@@ -589,6 +591,8 @@ export const IPC = {
   salesUpdate: 'sales:update',
   salesVoid: 'sales:void',
   salesDelete: 'sales:delete',
+  usersCount: 'users:count',
+  usersBootstrap: 'users:bootstrap',
   usersList: 'users:list',
   usersGet: 'users:get',
   usersCreate: 'users:create',

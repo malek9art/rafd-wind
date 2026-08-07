@@ -4,6 +4,7 @@
  * (سقف الخصم + التدقيق). الأخطاء تُرمى Error عادي (§7) وتُفكّ في الواجهة.
  */
 import { ipcMain, BrowserWindow, dialog } from 'electron'
+import type { IpcMainInvokeEvent } from 'electron'
 import { writeFileSync } from 'node:fs'
 import type { Db } from './db'
 import { IPC } from '../shared/types'
@@ -67,10 +68,26 @@ import type { ActivateResult, LicenseStatus, PnlReport } from '../shared/types'
 import { assertLicenseWritable } from './license-gate'
 import { WRITE_CHANNELS } from './ipc-write-channels'
 import { getDeviceFingerprint } from './device-fingerprint'
+import { assertAuthenticated, assertPermission } from './permissions'
 
 function actor(): ActorRef {
   const user = getCurrentUser()
   return { userId: user?.id ?? null, role: user?.role ?? null }
+}
+
+function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
+  const url = event.senderFrame?.url ?? event.sender.getURL()
+  if (url.startsWith('file://')) return
+
+  const devUrl = process.env['ELECTRON_RENDERER_URL']
+  if (devUrl) {
+    try {
+      if (new URL(url).origin === new URL(devUrl).origin) return
+    } catch {
+      /* falls through to the explicit rejection */
+    }
+  }
+  throw new Error('مصدر IPC غير موثوق')
 }
 
 export function registerIpc(db: Db, userDataDir: string): void {
@@ -81,7 +98,14 @@ export function registerIpc(db: Db, userDataDir: string): void {
    */
   const on: typeof ipcMain.handle = (channel, listener) => {
     ipcMain.handle(channel, (event, ...args) => {
-      if (WRITE_CHANNELS.has(channel)) assertLicenseWritable(userDataDir)
+      assertTrustedRenderer(event)
+      const currentUser = getCurrentUser()
+      assertAuthenticated(channel, currentUser)
+      if (WRITE_CHANNELS.has(channel)) {
+        assertLicenseWritable(userDataDir)
+        // إنشاء أول مدير هو الاستثناء الوحيد قبل وجود جلسة.
+        if (channel !== IPC.usersBootstrap) assertPermission(channel, currentUser)
+      }
       return listener(event, ...args)
     })
   }
@@ -203,6 +227,10 @@ export function registerIpc(db: Db, userDataDir: string): void {
   on(IPC.salesDelete, (_e, id: number) => sales.deleteSale(db, id, actor()))
 
   /* مستخدمون */
+  on(IPC.usersCount, () => users.countUsers(db))
+  on(IPC.usersBootstrap, (_e, full_name: string, pin: string) =>
+    users.bootstrapAdmin(db, full_name, pin)
+  )
   on(IPC.usersList, () => users.listUsers(db))
   on(IPC.usersGet, (_e, id: number) => users.getUser(db, id))
   on(IPC.usersCreate, (_e, payload: NewUser) => users.createUser(db, payload))

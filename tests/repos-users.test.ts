@@ -10,6 +10,8 @@ import { join } from 'node:path'
 import { openDb, type Db } from '../src/main/db'
 import {
   _logout,
+  bootstrapAdmin,
+  countUsers,
   createUser,
   deleteUser,
   getUser,
@@ -48,6 +50,15 @@ function pinHashOf(id: number): string | null {
 }
 
 describe('إنشاء وقراءة', () => {
+  it('تهيئة أول مدير تنشئ admin وتسجل جلسة نشطة ولا تسمح بتهيئة ثانية', () => {
+    expect(countUsers(db)).toBe(0)
+    const admin = bootstrapAdmin(db, 'مدير المتجر', '1234')
+    expect(admin.role).toBe('admin')
+    expect(getCurrentUser()?.id).toBe(admin.id)
+    expect(countUsers(db)).toBe(1)
+    expect(() => bootstrapAdmin(db, 'مدير آخر', '5678')).toThrow('مسبقًا')
+  })
+
   it('إنشاء بـPIN: يُخزَّن مجزّأ بصيغة scrypt ولا يظهر في أي استجابة', () => {
     const u = createUser(db, { full_name: 'مالك', role: 'manager', phone: '777111222', pin: '1234' })
     expect(u.id).toBe(1)
@@ -150,6 +161,16 @@ describe('الجلسة تغذّي سقف الكاشير والتدقيق', () =>
     expect(logs).toHaveLength(1)
     expect(logs[0].user_id).toBe(cashier.id)
     expect(logs[0].entity_id).toBe(sale.id)
+  })
+})
+
+describe('الجلسة عند تغيير المستخدم', () => {
+  it('تعطيل المستخدم النشط ينهي الجلسة، وحذف المستخدم النشط مرفوض', () => {
+    const user = createUser(db, { full_name: 'مدير نشط', role: 'admin', pin: '1234' })
+    loginUser(db, 'مدير نشط', '1234')
+    expect(() => deleteUser(db, user.id)).toThrow('المستخدم النشط')
+    updateUser(db, user.id, { status: 'inactive' })
+    expect(getCurrentUser()).toBeNull()
   })
 })
 
