@@ -21,8 +21,8 @@ describe('تصنيف القنوات', () => {
     expect(WRITE_CHANNELS.size + FREE_CHANNELS.size).toBe(ALL.length)
   })
 
-  it('قنوات الكتابة هي بالضبط عمليات الإدراج/التعديل/الإلغاء/الحذف/التهيئة/النسخ (36 قناة)', () => {
-    expect(WRITE_CHANNELS.size).toBe(36)
+  it('قنوات الكتابة هي بالضبط عمليات الإدراج/التعديل/الإلغاء/الحذف/التهيئة/النسخ/التحديث (38 قناة)', () => {
+    expect(WRITE_CHANNELS.size).toBe(38)
     const expected = [
       'products:create', 'products:update', 'products:delete', 'products:restock',
       'customers:create', 'customers:update', 'customers:delete',
@@ -36,7 +36,8 @@ describe('تصنيف القنوات', () => {
       'sales:create', 'sales:update', 'sales:void', 'sales:delete',
       'users:bootstrap', 'users:create', 'users:update', 'users:delete',
       'storeSettings:update',
-      'backups:create', 'backups:restore', 'backups:delete'
+      'backups:create', 'backups:restore', 'backups:delete',
+      'updater:download', 'updater:install'
     ]
     expect([...WRITE_CHANNELS].sort()).toEqual(expected.sort())
   })

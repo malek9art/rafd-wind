@@ -71,6 +71,7 @@ import { WRITE_CHANNELS } from './ipc-write-channels'
 import { getDeviceFingerprint } from './device-fingerprint'
 import { assertAuthenticated, assertPermission } from './permissions'
 import { createBackup, deleteBackup, listBackups, restoreBackup, validateBackup } from './backups'
+import { checkForUpdates, downloadUpdate, getUpdateState, installDownloadedUpdate } from './updater'
 
 function actor(): ActorRef {
   const user = getCurrentUser()
@@ -390,6 +391,16 @@ export function registerIpc(
       app.exit(0)
     }, 100)
     return result
+  })
+
+  /* التحديثات */
+  on(IPC.updaterStatus, () => getUpdateState())
+  on(IPC.updaterCheck, () => checkForUpdates())
+  on(IPC.updaterDownload, () => downloadUpdate())
+  on(IPC.updaterInstall, async () => {
+    await createBackup(db, userDataDir, appVersion)
+    installDownloadedUpdate()
+    return true
   })
 
   on(IPC.reportsGet, (_e, startDate: string, endDate: string): PnlReport => {

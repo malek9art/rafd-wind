@@ -3,6 +3,7 @@ import type {
   AppUser,
   AuditLog,
   BackupInfo,
+  UpdateState,
   BankAccount,
   Expense,
   NewUser,
@@ -54,6 +55,7 @@ export default function AdminScreen({ user }: Props) {
   const [banks, setBanks] = useState<BankAccount[]>([])
   const [terminals, setTerminals] = useState<PaymentTerminal[]>([])
   const [backups, setBackups] = useState<BackupInfo[]>([])
+  const [updateState, setUpdateState] = useState<UpdateState>({ phase: 'idle', version: null, progress: 0, error: null })
   const [audit, setAudit] = useState<AuditLog[]>([])
 
   const [userForm, setUserForm] = useState({ full_name: '', role: 'cashier', pin: '' })
@@ -77,6 +79,7 @@ export default function AdminScreen({ user }: Props) {
         setTerminals(await window.rafdLocal.paymentTerminals.list())
       } else if (target === 'backups') {
         setBackups(await window.rafdLocal.backups.list())
+        setUpdateState(await window.rafdLocal.updater.status())
       } else {
         setAudit(await window.rafdLocal.auditLogs.list({ limit: 300 }))
       }
@@ -260,6 +263,31 @@ export default function AdminScreen({ user }: Props) {
     }
   }
 
+  async function checkManagedUpdate() {
+    try {
+      setUpdateState(await window.rafdLocal.updater.check())
+    } catch (err) {
+      setError(errorText(err))
+    }
+  }
+
+  async function downloadManagedUpdate() {
+    try {
+      setUpdateState(await window.rafdLocal.updater.download())
+    } catch (err) {
+      setError(errorText(err))
+    }
+  }
+
+  async function installManagedUpdate() {
+    if (!isAdmin || !window.confirm('سيتم إنشاء نسخة احتياطية قبل التحديث ثم إعادة تشغيل التطبيق. متابعة؟')) return
+    try {
+      await window.rafdLocal.updater.install()
+    } catch (err) {
+      setError(errorText(err))
+    }
+  }
+
   async function validateManagedBackup(id: string) {
     try {
       await window.rafdLocal.backups.validate(id)
@@ -404,6 +432,18 @@ export default function AdminScreen({ user }: Props) {
             <button className="btn btn-primary" disabled={busy} onClick={() => void createManagedBackup()}>
               {busy ? 'جارٍ إنشاء النسخة…' : 'إنشاء نسخة احتياطية'}
             </button>
+          </div>
+          <div className="mb-4 rounded-xl border border-[var(--color-ink-200)] bg-[var(--bg)] p-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div><strong>تحديث التطبيق:</strong> {updateState.phase}{updateState.version ? ` — ${updateState.version}` : ''}</div>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn btn-ghost px-3 py-1" onClick={() => void checkManagedUpdate()}>فحص التحديث</button>
+                {updateState.phase === 'available' && <button className="btn btn-primary px-3 py-1" onClick={() => void downloadManagedUpdate()}>تنزيل</button>}
+                {updateState.phase === 'downloaded' && isAdmin && <button className="btn btn-primary px-3 py-1" onClick={() => void installManagedUpdate()}>تثبيت وإعادة التشغيل</button>}
+              </div>
+            </div>
+            {updateState.phase === 'downloading' && <div>التقدم: {updateState.progress.toFixed(1)}%</div>}
+            {updateState.error && <div className="text-[var(--danger)]">{updateState.error}</div>}
           </div>
           {backups.length === 0 ? (
             <p className="py-12 text-center text-[var(--text-muted)]">لا توجد نسخ احتياطية بعد.</p>

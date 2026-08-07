@@ -46,7 +46,9 @@ export const WRITE_CHANNELS: ReadonlySet<string> = new Set<string>([
   IPC.storeSettingsUpdate,
   IPC.backupsCreate,
   IPC.backupsRestore,
-  IPC.backupsDelete
+  IPC.backupsDelete,
+  IPC.updaterDownload,
+  IPC.updaterInstall
 ])
 
 /** كل قناة ليست كتابة هي قناة حرة (لا تمرّ بالبوابة) */

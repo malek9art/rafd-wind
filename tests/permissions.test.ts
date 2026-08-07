@@ -19,6 +19,7 @@ describe('صلاحيات الأدوار', () => {
     expect(canRole('admin', IPC.purchasesDelete)).toBe(true)
     expect(canRole('admin', IPC.usersCreate)).toBe(true)
     expect(canRole('admin', IPC.storeSettingsUpdate)).toBe(true)
+    expect(canRole('admin', IPC.updaterInstall)).toBe(true)
   })
 
   it('manager يدير التشغيل ولا يدير المستخدمين أو إعدادات المتجر', () => {
@@ -26,6 +27,7 @@ describe('صلاحيات الأدوار', () => {
     expect(canRole('manager', IPC.purchasesUpdate)).toBe(true)
     expect(canRole('manager', IPC.salesVoid)).toBe(true)
     expect(canRole('manager', IPC.backupsCreate)).toBe(true)
+    expect(canRole('manager', IPC.updaterDownload)).toBe(true)
     expect(canRole('manager', IPC.backupsRestore)).toBe(false)
     expect(canRole('manager', IPC.usersCreate)).toBe(false)
     expect(canRole('manager', IPC.storeSettingsUpdate)).toBe(false)

@@ -443,6 +443,15 @@ export interface BackupInfo {
   sha256: string
 }
 
+export type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error'
+
+export interface UpdateState {
+  phase: UpdatePhase
+  version: string | null
+  progress: number
+  error: string | null
+}
+
 export interface PnlReport {
   startDate: string
   endDate: string
@@ -562,6 +571,12 @@ export interface RafdLocalApi {
     restore(id: string): Promise<{ restored: BackupInfo; safety_backup: BackupInfo }>
     delete(id: string): Promise<void>
   }
+  updater: {
+    status(): Promise<UpdateState>
+    check(): Promise<UpdateState>
+    download(): Promise<UpdateState>
+    install(): Promise<boolean>
+  }
   reports: {
     getPnl(startDate: string, endDate: string): Promise<PnlReport>
   }
@@ -632,5 +647,9 @@ export const IPC = {
   backupsValidate: 'backups:validate',
   backupsRestore: 'backups:restore',
   backupsDelete: 'backups:delete',
+  updaterStatus: 'updater:status',
+  updaterCheck: 'updater:check',
+  updaterDownload: 'updater:download',
+  updaterInstall: 'updater:install',
   reportsGet: 'reports:get'
 } as const

@@ -12,6 +12,7 @@ import { registerIpc } from './ipc'
 import { loadLicenseStatus, saveActivatedLicense, verifyLicenseKey } from './license'
 import { createProduct, listProducts } from './repos/products'
 import { createSale, getSaleWithItems } from './repos/sales'
+import { configureAutoUpdater } from './updater'
 import type { SaleWithItems } from '../shared/types'
 
 // هوية التطبيق تُضبط من الكود مباشرةً قبل أي استدعاء آخر لـapp.* — userData
@@ -181,6 +182,7 @@ app.whenReady()
     try {
       db = openDb(dbFilePath())
       registerIpc(db, userDataDir(), dbFilePath(), app.getVersion())
+      configureAutoUpdater()
       const win = createWindow()
 
       app.on('activate', () => {
