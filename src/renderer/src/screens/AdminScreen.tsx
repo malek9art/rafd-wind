@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
   AppUser,
   AuditLog,
+  BackupInfo,
   BankAccount,
   Expense,
   NewUser,
@@ -14,7 +15,7 @@ interface Props {
   user: AppUser
 }
 
-type AdminTab = 'settings' | 'users' | 'expenses' | 'banks' | 'terminals' | 'audit'
+type AdminTab = 'settings' | 'users' | 'expenses' | 'banks' | 'terminals' | 'backups' | 'audit'
 
 const EMPTY_SETTINGS: Partial<StoreSettings> = {
   name: '',
@@ -40,7 +41,7 @@ function errorText(error: unknown): string {
 export default function AdminScreen({ user }: Props) {
   const isAdmin = user.role === 'admin'
   const tabs = useMemo<AdminTab[]>(
-    () => (isAdmin ? ['settings', 'users', 'expenses', 'banks', 'terminals', 'audit'] : ['expenses', 'banks', 'terminals', 'audit']),
+    () => (isAdmin ? ['settings', 'users', 'expenses', 'banks', 'terminals', 'backups', 'audit'] : ['expenses', 'banks', 'terminals', 'backups', 'audit']),
     [isAdmin]
   )
   const [tab, setTab] = useState<AdminTab>(tabs[0])
@@ -52,6 +53,7 @@ export default function AdminScreen({ user }: Props) {
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [banks, setBanks] = useState<BankAccount[]>([])
   const [terminals, setTerminals] = useState<PaymentTerminal[]>([])
+  const [backups, setBackups] = useState<BackupInfo[]>([])
   const [audit, setAudit] = useState<AuditLog[]>([])
 
   const [userForm, setUserForm] = useState({ full_name: '', role: 'cashier', pin: '' })
@@ -73,6 +75,8 @@ export default function AdminScreen({ user }: Props) {
         setBanks(await window.rafdLocal.bankAccounts.list())
       } else if (target === 'terminals') {
         setTerminals(await window.rafdLocal.paymentTerminals.list())
+      } else if (target === 'backups') {
+        setBackups(await window.rafdLocal.backups.list())
       } else {
         setAudit(await window.rafdLocal.auditLogs.list({ limit: 300 }))
       }
@@ -243,6 +247,51 @@ export default function AdminScreen({ user }: Props) {
     }
   }
 
+  async function createManagedBackup() {
+    setBusy(true)
+    setError(null)
+    try {
+      await window.rafdLocal.backups.create()
+      await loadTab('backups')
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function validateManagedBackup(id: string) {
+    try {
+      await window.rafdLocal.backups.validate(id)
+      alert('تم التحقق من سلامة النسخة الاحتياطية بنجاح.')
+    } catch (err) {
+      setError(errorText(err))
+    }
+  }
+
+  async function restoreManagedBackup(backup: BackupInfo) {
+    if (!isAdmin) return
+    if (!window.confirm('سيتم إنشاء نسخة أمان ثم استبدال قاعدة البيانات وإعادة تشغيل التطبيق. متابعة؟')) return
+    setBusy(true)
+    setError(null)
+    try {
+      await window.rafdLocal.backups.restore(backup.id)
+    } catch (err) {
+      setError(errorText(err))
+      setBusy(false)
+    }
+  }
+
+  async function removeManagedBackup(id: string) {
+    if (!isAdmin || !window.confirm('هل تريد حذف هذه النسخة الاحتياطية؟')) return
+    try {
+      await window.rafdLocal.backups.delete(id)
+      await loadTab('backups')
+    } catch (err) {
+      setError(errorText(err))
+    }
+  }
+
   async function removeUser(id: number) {
     if (!window.confirm('هل تريد حذف المستخدم؟')) return
     try {
@@ -259,6 +308,7 @@ export default function AdminScreen({ user }: Props) {
     expenses: 'المصروفات',
     banks: 'الحسابات البنكية',
     terminals: 'الطرفيات',
+    backups: 'النسخ الاحتياطية',
     audit: 'سجل التدقيق'
   }
 
@@ -342,6 +392,28 @@ export default function AdminScreen({ user }: Props) {
 
       {tab === 'terminals' && (
         <section className="grid gap-4 lg:grid-cols-[360px_1fr]"><form className="card h-fit space-y-3 p-5" onSubmit={createManagedTerminal}><h3 className="text-base font-bold">إضافة طرفية</h3><label className="label">الاسم<input className="input mt-1" value={terminalForm.name} onChange={(event) => setTerminalForm({ ...terminalForm, name: event.target.value })} /></label><label className="label">المزود<input className="input mt-1" value={terminalForm.provider} onChange={(event) => setTerminalForm({ ...terminalForm, provider: event.target.value })} /></label><label className="label">نوع الاتصال<select className="input mt-1" value={terminalForm.connection_type} onChange={(event) => setTerminalForm({ ...terminalForm, connection_type: event.target.value })}><option value="network">شبكة</option><option value="serial">Serial</option><option value="usb">USB</option></select></label><label className="label">معرف الطرفية<input className="input mt-1" value={terminalForm.terminal_id} onChange={(event) => setTerminalForm({ ...terminalForm, terminal_id: event.target.value })} /></label><button className="btn btn-primary w-full" disabled={busy}>حفظ الطرفية</button></form><div className="card overflow-x-auto p-5"><h3 className="mb-3 text-base font-bold">الطرفيات ({terminals.length})</h3><table className="w-full"><thead><tr className="border-b"><th className="py-2 text-start">الاسم</th><th className="py-2 text-start">المزود</th><th className="py-2 text-start">الاتصال</th><th /></tr></thead><tbody>{terminals.map((item) => <tr key={item.id} className="border-b"><td className="py-2">{item.name}</td><td className="py-2">{item.provider}</td><td className="py-2">{item.connection_type}</td><td className="space-x-2 py-2 text-end"><button onClick={() => void toggleTerminal(item)}>تبديل</button><button className="text-[var(--danger)]" onClick={() => void removeTerminal(item.id)}>حذف</button></td></tr>)}</tbody></table></div></section>
+      )}
+
+      {tab === 'backups' && (
+        <section className="card overflow-x-auto p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-base font-bold">النسخ الاحتياطية المحلية</h3>
+              <p className="mt-1 text-[var(--text-muted)]">يتم التحقق من checksum وSQLite integrity قبل الاستعادة.</p>
+            </div>
+            <button className="btn btn-primary" disabled={busy} onClick={() => void createManagedBackup()}>
+              {busy ? 'جارٍ إنشاء النسخة…' : 'إنشاء نسخة احتياطية'}
+            </button>
+          </div>
+          {backups.length === 0 ? (
+            <p className="py-12 text-center text-[var(--text-muted)]">لا توجد نسخ احتياطية بعد.</p>
+          ) : (
+            <table className="w-full">
+              <thead><tr className="border-b"><th className="py-2 text-start">التاريخ</th><th className="py-2 text-start">الإصدار</th><th className="py-2 text-start">الحجم</th><th className="py-2 text-start">SHA256</th><th /></tr></thead>
+              <tbody>{backups.map((backup) => <tr key={backup.id} className="border-b"><td className="py-2">{new Date(backup.created_at).toLocaleString('ar-YE')}</td><td className="py-2">schema {backup.schema_version} / app {backup.app_version}</td><td className="py-2" dir="ltr">{backup.size_bytes.toLocaleString()} bytes</td><td className="max-w-[220px] truncate py-2 font-mono text-[10px]" dir="ltr">{backup.sha256}</td><td className="space-x-2 py-2 text-end"><button onClick={() => void validateManagedBackup(backup.id)}>فحص</button>{isAdmin && <><button onClick={() => void restoreManagedBackup(backup)}>استعادة</button><button className="text-[var(--danger)]" onClick={() => void removeManagedBackup(backup.id)}>حذف</button></>}</td></tr>)}</tbody>
+            </table>
+          )}
+        </section>
       )}
 
       {tab === 'audit' && <section className="card overflow-x-auto p-5"><h3 className="mb-3 text-base font-bold">سجل التدقيق ({audit.length})</h3><table className="w-full"><thead><tr className="border-b"><th className="py-2 text-start">الوقت</th><th className="py-2 text-start">المستخدم</th><th className="py-2 text-start">العملية</th><th className="py-2 text-start">الكيان</th><th className="py-2 text-start">التفاصيل</th></tr></thead><tbody>{audit.map((item) => <tr key={item.id} className="border-b"><td className="py-2" dir="ltr">{new Date(item.created_at).toLocaleString('ar-YE')}</td><td className="py-2">{item.user_id ?? '-'}</td><td className="py-2">{item.action}</td><td className="py-2">{item.entity_type ?? '-'}</td><td className="max-w-[320px] truncate py-2" dir="ltr">{item.meta ?? '-'}</td></tr>)}</tbody></table></section>}

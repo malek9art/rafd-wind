@@ -36,8 +36,13 @@ let dbClosed = false
 
 function closeDb(): void {
   if (db && !dbClosed) {
-    db.close()
-    dbClosed = true
+    try {
+      db.close()
+    } catch {
+      /* the restore flow may have closed the handle already */
+    } finally {
+      dbClosed = true
+    }
   }
 }
 
@@ -175,7 +180,7 @@ app.whenReady()
     if (!hasSingleInstanceLock) return
     try {
       db = openDb(dbFilePath())
-      registerIpc(db, userDataDir())
+      registerIpc(db, userDataDir(), dbFilePath(), app.getVersion())
       const win = createWindow()
 
       app.on('activate', () => {

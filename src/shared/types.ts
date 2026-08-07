@@ -433,6 +433,16 @@ export type ActivateResult =
   | { ok: true; info: LicenseInfo; expired: boolean; expiring_soon: boolean }
   | { ok: false; error: string }
 
+export interface BackupInfo {
+  id: string
+  file_name: string
+  created_at: string
+  schema_version: number
+  app_version: string
+  size_bytes: number
+  sha256: string
+}
+
 export interface PnlReport {
   startDate: string
   endDate: string
@@ -545,6 +555,13 @@ export interface RafdLocalApi {
   files: {
     saveText(filename: string, content: string): Promise<boolean>
   }
+  backups: {
+    list(): Promise<BackupInfo[]>
+    create(): Promise<BackupInfo>
+    validate(id: string): Promise<BackupInfo>
+    restore(id: string): Promise<{ restored: BackupInfo; safety_backup: BackupInfo }>
+    delete(id: string): Promise<void>
+  }
   reports: {
     getPnl(startDate: string, endDate: string): Promise<PnlReport>
   }
@@ -610,5 +627,10 @@ export const IPC = {
   printerPrintRaw: 'printer:print-raw',
   printerPrintHtml: 'printer:print-html',
   filesSaveText: 'files:save-text',
+  backupsList: 'backups:list',
+  backupsCreate: 'backups:create',
+  backupsValidate: 'backups:validate',
+  backupsRestore: 'backups:restore',
+  backupsDelete: 'backups:delete',
   reportsGet: 'reports:get'
 } as const

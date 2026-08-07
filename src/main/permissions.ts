@@ -41,7 +41,10 @@ const ADMIN_CHANNELS = new Set<string>([
   IPC.usersCreate,
   IPC.usersUpdate,
   IPC.usersDelete,
-  IPC.storeSettingsUpdate
+  IPC.storeSettingsUpdate,
+  IPC.backupsCreate,
+  IPC.backupsRestore,
+  IPC.backupsDelete
 ])
 
 const MANAGER_CHANNELS = new Set<string>([
@@ -68,6 +71,7 @@ const MANAGER_CHANNELS = new Set<string>([
   IPC.paymentTerminalsCreate,
   IPC.paymentTerminalsUpdate,
   IPC.paymentTerminalsDelete,
+  IPC.backupsCreate,
   IPC.salesCreate,
   IPC.salesUpdate,
   IPC.salesVoid

@@ -125,6 +125,13 @@ const api: RafdLocalApi = {
   files: {
     saveText: (filename: string, content: string) => ipcRenderer.invoke(IPC.filesSaveText, filename, content)
   },
+  backups: {
+    list: () => ipcRenderer.invoke(IPC.backupsList),
+    create: () => ipcRenderer.invoke(IPC.backupsCreate),
+    validate: (id: string) => ipcRenderer.invoke(IPC.backupsValidate, id),
+    restore: (id: string) => ipcRenderer.invoke(IPC.backupsRestore, id),
+    delete: (id: string) => ipcRenderer.invoke(IPC.backupsDelete, id)
+  },
   reports: {
     getPnl: (startDate: string, endDate: string) => ipcRenderer.invoke(IPC.reportsGet, startDate, endDate)
   }

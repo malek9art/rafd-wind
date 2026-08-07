@@ -3,9 +3,10 @@
  * ويمرّر «المستدعي» من جلسة المستخدم النشط للعمليات التي تحتاجه
  * (سقف الخصم + التدقيق). الأخطاء تُرمى Error عادي (§7) وتُفكّ في الواجهة.
  */
-import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { app, ipcMain, BrowserWindow, dialog } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Db } from './db'
 import { IPC } from '../shared/types'
 import type {
@@ -69,6 +70,7 @@ import { assertLicenseWritable } from './license-gate'
 import { WRITE_CHANNELS } from './ipc-write-channels'
 import { getDeviceFingerprint } from './device-fingerprint'
 import { assertAuthenticated, assertPermission } from './permissions'
+import { createBackup, deleteBackup, listBackups, restoreBackup, validateBackup } from './backups'
 
 function actor(): ActorRef {
   const user = getCurrentUser()
@@ -90,7 +92,12 @@ function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
   throw new Error('مصدر IPC غير موثوق')
 }
 
-export function registerIpc(db: Db, userDataDir: string): void {
+export function registerIpc(
+  db: Db,
+  userDataDir: string,
+  dbPath: string = join(userDataDir, 'rafd.db'),
+  appVersion = '0.1.0'
+): void {
   /**
    * بوابة قفل الكتابة المركزية (§8.3): كل تسجيل يمرّ من هنا؛ القناة المصنَّفة
    * كتابةً في ipc-write-channels.ts تُفحص حالة ترخيصها قبل أي تنفيذ.
@@ -368,6 +375,21 @@ export function registerIpc(db: Db, userDataDir: string): void {
       console.error('Failed to save file via native dialog:', err)
       return false
     }
+  })
+
+  /* النسخ الاحتياطية */
+  on(IPC.backupsList, () => listBackups(userDataDir))
+  on(IPC.backupsValidate, (_e, id: string) => validateBackup(userDataDir, id))
+  on(IPC.backupsCreate, async () => createBackup(db, userDataDir, appVersion))
+  on(IPC.backupsDelete, (_e, id: string) => deleteBackup(userDataDir, id))
+  on(IPC.backupsRestore, async (_e, id: string) => {
+    const result = await restoreBackup(db, userDataDir, dbPath, id, appVersion)
+    // الاستعادة تستبدل ملف القاعدة؛ إعادة التشغيل إلزامية لإعادة بناء جميع المقابض.
+    setTimeout(() => {
+      app.relaunch()
+      app.exit(0)
+    }, 100)
+    return result
   })
 
   on(IPC.reportsGet, (_e, startDate: string, endDate: string): PnlReport => {

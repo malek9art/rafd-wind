@@ -25,6 +25,8 @@ describe('صلاحيات الأدوار', () => {
     expect(canRole('manager', IPC.productsUpdate)).toBe(true)
     expect(canRole('manager', IPC.purchasesUpdate)).toBe(true)
     expect(canRole('manager', IPC.salesVoid)).toBe(true)
+    expect(canRole('manager', IPC.backupsCreate)).toBe(true)
+    expect(canRole('manager', IPC.backupsRestore)).toBe(false)
     expect(canRole('manager', IPC.usersCreate)).toBe(false)
     expect(canRole('manager', IPC.storeSettingsUpdate)).toBe(false)
   })
