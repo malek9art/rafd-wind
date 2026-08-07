@@ -18,7 +18,7 @@ import { basename } from 'node:path'
 export type Db = Database.Database
 
 /** إصدار المخطط المتوقَّع في هذا الإصدار من التطبيق */
-export const SCHEMA_VERSION_CODE = 5
+export const SCHEMA_VERSION_CODE = 6
 
 export interface Migration {
   version: number
@@ -419,12 +419,22 @@ function up_v5(db: Db): void {
   `)
 }
 
+/**
+ * الترقية v6 — توحيد الحالة القديمة completed إلى pending.
+ * في الإصدارات السابقة كانت completed تُستخدم لأمر لم يُستلم، بينما
+ * الواجهة الجديدة تحتاج حالات استلام صريحة لا تسمح بإعادة الاستلام الخاطئ.
+ */
+function up_v6(db: Db): void {
+  db.prepare("UPDATE purchases SET status = 'pending' WHERE status = 'completed'").run()
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'phase1-full-schema', up: up_v1 },
   { version: 2, name: 'sales-customer-link', up: up_v2 },
   { version: 3, name: 'sale-items-weight', up: up_v3 },
   { version: 4, name: 'sales-integrity-and-voiding', up: up_v4 },
-  { version: 5, name: 'sale-item-cost-snapshot', up: up_v5 }
+  { version: 5, name: 'sale-item-cost-snapshot', up: up_v5 },
+  { version: 6, name: 'purchase-receiving-state-machine', up: up_v6 }
 ]
 
 /* ------------------------------------------------------------------ */

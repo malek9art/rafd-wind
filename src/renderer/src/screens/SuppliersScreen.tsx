@@ -497,7 +497,16 @@ export default function SuppliersScreen() {
                             <span dir="ltr" className="text-red-700">{pur.total} YER</span>
                           </div>
                           <div className="flex justify-between text-[9px] text-[var(--text-muted)] mt-0.5">
-                            <span>الحالة: {pur.status === 'completed' ? 'تم الاستلام' : 'مسودة'}</span>
+                            <span>
+                              الحالة:{' '}
+                              {pur.status === 'received'
+                                ? 'تم الاستلام بالكامل'
+                                : pur.status === 'partially_received'
+                                  ? 'استلام جزئي'
+                                  : pur.status === 'cancelled'
+                                    ? 'ملغى'
+                                    : 'بانتظار الاستلام'}
+                            </span>
                             <span>{new Date(pur.created_at).toLocaleDateString('ar-YE')}</span>
                           </div>
                         </div>

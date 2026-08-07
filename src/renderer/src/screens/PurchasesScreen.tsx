@@ -12,6 +12,14 @@ interface OrderLine {
   total: number
 }
 
+const PURCHASE_STATUS_LABELS: Record<string, string> = {
+  draft: 'مسودة',
+  pending: 'بانتظار الاستلام',
+  partially_received: 'مستلم جزئيًا',
+  received: 'مستلم بالكامل',
+  cancelled: 'ملغى'
+}
+
 export default function PurchasesScreen() {
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -200,22 +208,15 @@ export default function PurchasesScreen() {
     setBusy(true)
     setError(null)
     try {
-      // Structure item received updates
-      const updatedItems = activePurchase.items.map((item) => ({
+      // الكميات هنا تراكمية: إرسالها كقائمة استلام صريحة يمنع إعادة إرسال
+      // بيانات البند الكاملة أو الوثوق بإجمالي قادم من الواجهة.
+      const receivedItems = activePurchase.items.map((item) => ({
         product_id: item.product_id,
-        product_name: item.product_name,
-        quantity: item.quantity,
-        unit: item.unit,
-        unit_cost: item.unit_cost,
-        total: item.total,
-        units_per_carton: item.units_per_carton,
-        cartons: item.cartons,
         received_quantity: Number(receiveQtys[item.id]) || 0
       }))
 
       await window.rafdLocal.purchases.update(activePurchase.purchase.id, {
-        receive: true,
-        items: updatedItems
+        received_items: receivedItems
       })
 
       setShowOrderModal(false)
@@ -230,7 +231,7 @@ export default function PurchasesScreen() {
 
   // Delete Purchase
   async function handleDeletePurchase(id: number) {
-    if (window.confirm('هل أنت متأكد من حذف أمر الشراء هذا؟ سيعيد المخزون للحالة السابقة ويلغي حركات الدفتر للمورد.')) {
+    if (window.confirm('هل أنت متأكد من حذف أمر الشراء غير المستلم؟ لا يمكن حذف أمر بدأ استلامه أو عليه حركة مالية.')) {
       setError(null)
       try {
         await window.rafdLocal.purchases.delete(id)
@@ -256,7 +257,7 @@ export default function PurchasesScreen() {
           </tr>
           <tr>
             <td><strong>المورد:</strong> ${purchase.supplier_name}</td>
-            <td style="text-align: left;"><strong>الحالة:</strong> ${purchase.status === 'received' ? 'مستلم بالكامل' : 'مسودة / قيد الاستلام'}</td>
+            <td style="text-align: left;"><strong>الحالة:</strong> ${PURCHASE_STATUS_LABELS[purchase.status] || purchase.status}</td>
           </tr>
         </table>
         <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px;">
@@ -344,8 +345,11 @@ export default function PurchasesScreen() {
             onChange={(e) => setFilterStatus(e.target.value)}
           >
             <option value="الكل">جميع الحالات</option>
+            <option value="draft">مسودة</option>
+            <option value="pending">بانتظار الاستلام</option>
+            <option value="partially_received">مستلم جزئيًا</option>
             <option value="received">مستلم بالكامل</option>
-            <option value="pending">مسودة / معلق</option>
+            <option value="cancelled">ملغى</option>
           </select>
         </div>
 
@@ -405,15 +409,19 @@ export default function PurchasesScreen() {
                       {p.paid.toLocaleString()} YER
                     </td>
                     <td className="py-2.5">
-                      {p.status === 'received' ? (
-                        <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold">
-                          مستلم بالكامل
-                        </span>
-                      ) : (
-                        <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[10px] font-bold">
-                          مسودة معلقة
-                        </span>
-                      )}
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          p.status === 'received'
+                            ? 'bg-green-100 text-green-700'
+                            : p.status === 'partially_received'
+                              ? 'bg-blue-100 text-blue-700'
+                              : p.status === 'cancelled'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-amber-100 text-amber-700'
+                        }`}
+                      >
+                        {PURCHASE_STATUS_LABELS[p.status] || p.status}
+                      </span>
                     </td>
                     <td className="py-2.5 text-center">
                       <div className="flex items-center justify-center gap-1.5">
@@ -718,9 +726,13 @@ export default function PurchasesScreen() {
                   <span className="text-gray-600 text-[10px]">الحالة:</span>
                   <div className="text-xs">
                     {activePurchase.purchase.status === 'received' ? (
-                      <span className="text-green-700">✔️ تم الاستلام والمطابقة</span>
+                      <span className="text-green-700">✔️ مستلم بالكامل</span>
+                    ) : activePurchase.purchase.status === 'partially_received' ? (
+                      <span className="text-blue-700">📦 مستلم جزئيًا — يمكن استكمال الاستلام</span>
+                    ) : activePurchase.purchase.status === 'cancelled' ? (
+                      <span className="text-red-700">✖️ أمر ملغى</span>
                     ) : (
-                      <span className="text-amber-700">⏳ مسودة بانتظار الاستلام الفعلي</span>
+                      <span className="text-amber-700">⏳ بانتظار الاستلام الفعلي</span>
                     )}
                   </div>
                 </div>
@@ -809,7 +821,7 @@ export default function PurchasesScreen() {
                   إغلاق
                 </button>
 
-                {activePurchase.purchase.status !== 'received' && (
+                {activePurchase.purchase.status !== 'received' && activePurchase.purchase.status !== 'cancelled' && (
                   <button
                     onClick={handleConfirmReceipt}
                     className="btn btn-primary px-5 py-2 font-bold"

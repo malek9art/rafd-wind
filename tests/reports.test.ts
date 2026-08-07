@@ -65,6 +65,7 @@ describe('منطق التقارير والربح والخسارة', () => {
 
     // 4. تسجيل أمر شراء
     createPurchase(db, {
+      status: 'received',
       items: [{ product_name: 'سلعة تجريبية مشتراة', quantity: 10, unit_cost: 30 }],
       paid: 300
     })

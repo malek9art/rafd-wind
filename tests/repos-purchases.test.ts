@@ -50,7 +50,7 @@ describe('إنشاء أمر شراء', () => {
     expect(purchase.reference).toBe('PO-000001')
     expect(purchase.total).toBe(42.5) // 30 + 12.5
     expect(purchase.paid).toBe(0)
-    expect(purchase.status).toBe('completed')
+    expect(purchase.status).toBe('pending')
     expect(items).toHaveLength(2)
     expect(items[1].total).toBe(12.5)
   })
@@ -94,7 +94,7 @@ describe('الاستلام (receive)', () => {
 
     const product = getProduct(db, productId)
     expect(product.stock).toBe(30) // 10 + 20
-    expect(product.cost).toBe(4) // unit_cost الجديد
+    expect(product.cost).toBe(3) // متوسط التكلفة المرجح بعد الاستلام
 
     const packaging = db
       .prepare('SELECT units_per_carton, carton_cost, unit_cost FROM product_packaging WHERE product_id = ?')
@@ -120,19 +120,19 @@ describe('الاستلام (receive)', () => {
     expect(getProduct(db, productId).stock).toBe(12)
   })
 
-  it('استلام لاحق عبر update(receive) وأمر بدون دين لا يكتب قيدًا', () => {
+  it('استلام لاحق عبر update(receive) يسجل قيمة الاستلام في دفتر المورد', () => {
     const productId = seedProduct(0, 1)
     const supplier = createSupplier(db, { name: 'مورد' })
     const { purchase } = createPurchase(db, {
       supplier_id: supplier.id,
-      paid: 100,
+      paid: 0,
       items: [{ product_id: productId, product_name: 'أرز', quantity: 10, unit_cost: 10 }]
     })
     const updated = updatePurchase(db, purchase.id, { receive: true })
     expect(updated.purchase.status).toBe('received')
     expect(getProduct(db, productId).stock).toBe(10)
-    // paid == total ⇒ لا قيد
-    expect(listLedgerBySupplier(db, supplier.id)).toHaveLength(0)
+    expect(getSupplier(db, supplier.id).balance).toBe(100)
+    expect(listLedgerBySupplier(db, supplier.id)).toHaveLength(1)
   })
 
   it('ذرّية: فشل منتصف العملية لا يترك أي أثر (بند ثانٍ بمنتج وهمي)', () => {
@@ -362,5 +362,76 @@ describe('تصحيحات الدفعة 3 - الموردون والمشتريات 
     // كامل الفاتورة (10 * 10 = 100) تسجل كدين آجل على المتجر للمورد
     expect(purchase.total).toBe(100)
     expect(getSupplier(db, supplier.id).balance).toBe(100)
+  })
+})
+
+describe('الاستلام الجزئي متعدد المراحل ودين المورد حسب المستلم', () => {
+  it('يضيف الفرق الجديد فقط ويحسب المتوسط المرجح والدين تراكميًا', () => {
+    const productId = seedProduct(10, 80)
+    const supplier = createSupplier(db, { name: 'مورد جزئي' })
+    const { purchase } = createPurchase(db, {
+      supplier_id: supplier.id,
+      status: 'pending',
+      items: [
+        {
+          product_id: productId,
+          product_name: 'حليب',
+          quantity: 50,
+          unit_cost: 10,
+          units_per_carton: 10
+        }
+      ]
+    })
+
+    const first = updatePurchase(db, purchase.id, {
+      received_items: [{ product_id: productId, received_quantity: 30 }]
+    })
+    expect(first.purchase.status).toBe('partially_received')
+    expect(first.items[0].received_quantity).toBe(30)
+    expect(getProduct(db, productId).stock).toBe(40)
+    expect(getProduct(db, productId).cost).toBe(27.5)
+    expect(getSupplier(db, supplier.id).balance).toBe(300)
+    expect(listLedgerBySupplier(db, supplier.id).map((entry) => entry.amount)).toEqual([300])
+
+    const payment = updatePurchase(db, purchase.id, { pay_amount: 100 })
+    expect(payment.purchase.paid).toBe(100)
+    expect(getSupplier(db, supplier.id).balance).toBe(200)
+
+    const second = updatePurchase(db, purchase.id, {
+      received_items: [{ product_id: productId, received_quantity: 50 }]
+    })
+    expect(second.purchase.status).toBe('received')
+    expect(second.items[0].received_quantity).toBe(50)
+    expect(getProduct(db, productId).stock).toBe(60)
+    expect(getProduct(db, productId).cost).toBe(21.67)
+    expect(getSupplier(db, supplier.id).balance).toBe(400)
+    expect(listLedgerBySupplier(db, supplier.id).map((entry) => entry.type)).toEqual([
+      'purchase_credit',
+      'payment',
+      'purchase_credit'
+    ])
+    expect(listLedgerBySupplier(db, supplier.id).map((entry) => entry.amount)).toEqual([300, 100, 200])
+  })
+
+  it('يرفض الاستلام الزائد والدفعة قبل أول استلام دون أي أثر', () => {
+    const productId = seedProduct(0, 5)
+    const supplier = createSupplier(db, { name: 'مورد تحقق' })
+    const { purchase } = createPurchase(db, {
+      supplier_id: supplier.id,
+      status: 'pending',
+      items: [{ product_id: productId, product_name: 'صنف', quantity: 10, unit_cost: 5 }]
+    })
+
+    expect(() =>
+      updatePurchase(db, purchase.id, {
+        received_items: [{ product_id: productId, received_quantity: 11 }]
+      })
+    ).toThrow('تتجاوز المطلوب')
+    expect(getProduct(db, productId).stock).toBe(0)
+    expect(getSupplier(db, supplier.id).balance).toBe(0)
+
+    expect(() => updatePurchase(db, purchase.id, { pay_amount: 1 })).toThrow('قبل أول استلام')
+    expect(getSupplier(db, supplier.id).balance).toBe(0)
+    expect(listLedgerBySupplier(db, supplier.id)).toHaveLength(0)
   })
 })

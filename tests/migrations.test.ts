@@ -182,6 +182,26 @@ describe('ترقية قاعدة عميل من المرحلة 0 (v0 → الإص�
   })
 })
 
+describe('ترقية حالة المشتريات القديمة', () => {
+  it('تحول completed القديمة إلى pending حتى لا تُعامل كأمر مستلم', () => {
+    const db = trackedOpen(dbPath)
+    db.prepare(
+      `INSERT INTO purchases (
+        supplier_id, supplier_name, reference, total, paid, status,
+        purchase_date, notes, created_at
+      ) VALUES (NULL, NULL, 'PO-OLD', 10, 0, 'completed', ?, NULL, ?)`
+    ).run(new Date().toISOString(), new Date().toISOString())
+    db.prepare('UPDATE schema_version SET version = 5 WHERE id = 1').run()
+    db.close()
+
+    const migrated = trackedOpen(dbPath)
+    const row = migrated.prepare('SELECT status FROM purchases WHERE reference = ?').get('PO-OLD') as {
+      status: string
+    }
+    expect(row.status).toBe('pending')
+  })
+})
+
 describe('حماية من قاعدة بإصدار أحدث', () => {
   it('يرفض الفتح برسالة صريحة', () => {
     const db = new Database(dbPath)

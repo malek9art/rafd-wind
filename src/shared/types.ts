@@ -237,16 +237,24 @@ export interface NewPurchase {
   items: NewPurchaseItem[]
 }
 
+export interface PurchaseReceiptItem {
+  product_id?: number | null
+  /** الكمية التراكمية المستلمة بعد هذه العملية */
+  received_quantity: number
+}
+
 export interface PurchasePatch {
   supplier_id?: number | null
   supplier_name?: string | null
   purchase_date?: string | null
   notes?: string | null
-  /** استبدال كامل لبنود الشراء (حذف ثم إدراج) */
+  /** استبدال كامل لبنود الشراء قبل أول استلام فقط */
   items?: NewPurchaseItem[]
-  /** تنفيذ الاستلام الآن (مرة واحدة فقط) */
+  /** قائمة استلام صريحة؛ الكمية هنا تراكمية وليست فرقًا */
+  received_items?: PurchaseReceiptItem[]
+  /** تنفيذ الاستلام الآن */
   receive?: boolean
-  /** دفعة إضافية على أمر الشراء */
+  /** دفعة إضافية على أمر الشراء — بعد وجود استلام فعلي فقط */
   pay_amount?: number
   status?: string
 }
