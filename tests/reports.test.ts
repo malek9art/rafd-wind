@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,6 +13,9 @@ let dir: string
 let db: Db
 
 beforeEach(() => {
+  // تثبيت الساعة يجعل بيانات nowIso تقع داخل نطاق التقرير في كل بيئة/تاريخ تشغيل.
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-07-15T12:00:00.000Z'))
   dir = mkdtempSync(join(tmpdir(), 'rafd-rep-'))
   db = openDb(join(dir, 't.db'))
 })
@@ -22,6 +25,7 @@ afterEach(() => {
     db.close()
   } catch {}
   rmSync(dir, { recursive: true, force: true })
+  vi.useRealTimers()
 })
 
 describe('منطق التقارير والربح والخسارة', () => {
