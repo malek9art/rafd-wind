@@ -72,12 +72,18 @@ export function getPnlReport(db: Db, startDate: string, endDate: string): PnlRep
     .get(startDate.slice(0, 10), endDate.slice(0, 10), start, end) as { sum: number | null }
   const totalExpenses = roundMoney(expRow?.sum ?? 0)
 
-  // 4. حساب إجمالي المشتريات
+  // 4. حساب قيمة المشتريات المستلمة فعليًا فقط.
+  // الأوامر المعلقة لا تدخل التقرير، والاستلام الجزئي يدخل بقيمة الكمية المستلمة.
   const purRow = db
     .prepare(`
-      SELECT SUM(total) AS sum 
-      FROM purchases 
-      WHERE (purchase_date >= ? AND purchase_date <= ?) OR (created_at >= ? AND created_at <= ?)
+      SELECT SUM(pi.received_quantity * pi.unit_cost) AS sum
+      FROM purchase_items pi
+      JOIN purchases p ON p.id = pi.purchase_id
+      WHERE p.status IN ('partially_received', 'received')
+        AND (
+          (p.purchase_date >= ? AND p.purchase_date <= ?)
+          OR (p.created_at >= ? AND p.created_at <= ?)
+        )
     `)
     .get(startDate.slice(0, 10), endDate.slice(0, 10), start, end) as { sum: number | null }
   const totalPurchases = roundMoney(purRow?.sum ?? 0)

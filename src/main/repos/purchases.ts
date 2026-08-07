@@ -136,13 +136,16 @@ function normalizeLine(item: NewPurchaseItem): NormalizedLine {
     throw new Error('عدد الكراتين يجب أن يكون صفرًا أو أكثر')
   }
 
+  const total = roundMoney(unitCost * quantity)
+  if (!Number.isFinite(total)) throw new Error('إجمالي بند الشراء غير صالح')
+
   return {
     product_id: item.product_id ?? null,
     product_name: item.product_name.trim(),
     quantity,
     unit: item.unit?.trim() || 'حبة',
     unit_cost: roundMoney(unitCost),
-    total: roundMoney(unitCost * quantity),
+    total,
     units_per_carton: unitsPerCarton,
     cartons,
     received_quantity: received
@@ -240,6 +243,9 @@ function updateProductForReceipt(
   if (receivedDelta <= 0) return
   if (!Number.isFinite(product.stock) || product.stock < 0) {
     throw new Error(`مخزون المنتج غير صالح: ${productId}`)
+  }
+  if (!Number.isFinite(product.cost) || product.cost < 0) {
+    throw new Error(`تكلفة المنتج غير صالحة: ${productId}`)
   }
 
   const newStock = product.stock + receivedDelta

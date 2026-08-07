@@ -85,7 +85,7 @@ cancelled
 
 | الأمر | النتيجة |
 |---|---|
-| `npm test` | ناجح — 17 ملفًا و170 اختبارًا |
+| `npm test` | ناجح — 17 ملفًا و171 اختبارًا |
 | `npm run typecheck` | ناجح |
 | `npm run build` | ناجح |
 | `git diff --check` | ناجح |

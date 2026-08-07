@@ -6,7 +6,7 @@ import { openDb, type Db } from '../src/main/db'
 import { createProduct } from '../src/main/repos/products'
 import { createSale, voidSale } from '../src/main/repos/sales'
 import { createExpense } from '../src/main/repos/crudSimple'
-import { createPurchase } from '../src/main/repos/purchases'
+import { createPurchase, updatePurchase } from '../src/main/repos/purchases'
 import { getPnlReport } from '../src/main/repos/reports'
 
 let dir: string
@@ -119,5 +119,19 @@ describe('منطق التقارير والربح والخسارة', () => {
 
     const report = getPnlReport(db, '2026-07-01', '2026-07-31')
     expect(report.totalCogs).toBe(60)
+  })
+
+  it('لا يحسب الأمر المعلق، ويحسب قيمة الكمية المستلمة فقط في الاستلام الجزئي', () => {
+    const product = createProduct(db, { name: 'صنف شراء', price: 20, cost: 5, stock: 0 })
+    const { purchase } = createPurchase(db, {
+      status: 'pending',
+      items: [{ product_id: product.id, product_name: 'صنف شراء', quantity: 10, unit_cost: 3 }]
+    })
+
+    expect(getPnlReport(db, '2026-07-01', '2026-07-31').totalPurchases).toBe(0)
+    updatePurchase(db, purchase.id, {
+      received_items: [{ product_id: product.id, received_quantity: 4 }]
+    })
+    expect(getPnlReport(db, '2026-07-01', '2026-07-31').totalPurchases).toBe(12)
   })
 })
